@@ -167,11 +167,13 @@ program
         projectName
       });
 
-      // 确保输出目录存在
-      if (!fs.existsSync(output)) {
-        fs.mkdirSync(output, { recursive: true });
-        console.log(`📁 Created output directory: ${output}`);
+      // 清理并重新创建输出目录
+      if (fs.existsSync(output)) {
+        fs.rmSync(output, { recursive: true, force: true });
+        console.log(`🧹 Cleaned existing directory: ${output}`);
       }
+      fs.mkdirSync(output, { recursive: true });
+      console.log(`📁 Created output directory: ${output}`);
 
       // 写入生成的文件
       const writtenFiles: string[] = [];
@@ -199,7 +201,9 @@ program
           resolveJsonModule: true,
           allowSyntheticDefaultImports: true,
           sourceMap: false,
-          removeComments: false
+          removeComments: false,
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true
         },
         include: ['*.ts'],
         exclude: ['node_modules', 'dist']
@@ -222,7 +226,10 @@ program
           prepublishOnly: 'npm run clean && npm run build'
         },
         dependencies: {
-          [packageName]: 'file:../ts-sdk-client'
+          [packageName]: 'file:../../ts-sdk-client',
+          'class-transformer': '^0.5.1',
+          'class-validator': '^0.14.0',
+          'reflect-metadata': '^0.1.13'
         },
         devDependencies: {
           typescript: '^5.0.0'
@@ -242,11 +249,11 @@ program
       console.log(`   cd ${output}`);
       console.log('   npm install');
       console.log('   # 使用示例:');
-      console.log('   # import { ActivityApi, TwitterApi } from "./index";');
+      console.log('   # import { DataApi, UserApi } from "./index";');
       console.log('   # import { withUri, withHeader, withHeaders } from "./types";');
       console.log('   # ');
-      console.log('   # const twitterApi = new TwitterApi(httpBuilder);');
-      console.log('   # const result = await twitterApi.record(');
+      console.log('   # const userApi = new UserApi(httpBuilder);');
+      console.log('   # const result = await userApi.record(');
       console.log('   #   { data: {...} },');
       console.log('   #   withUri("/custom/path"),');
       console.log('   #   withHeader("X-Request-ID", "unique-id"),');

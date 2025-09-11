@@ -72,25 +72,25 @@ npm run build
 
 ```typescript
 import { FetchHttpBuilder } from 'ts-sdk-client';
-import { TwitterApi, ActivityApi } from './generated/index';
+import { UserApi, DataApi } from './generated/index';
 
 // 创建 HTTP Builder
 const httpBuilder = new FetchHttpBuilder('https://api.example.com');
 
 // 创建特定的 API 客户端
-const twitterApi = new TwitterApi(httpBuilder);
-const activityApi = new ActivityApi(httpBuilder);
+const userApi = new UserApi(httpBuilder);
+const dataApi = new DataApi(httpBuilder);
 
 // 调用 API 方法（支持 options 参数）
 async function example() {
   try {
     // 基本调用
-    const timeline = await twitterApi.searchTimeline({ 
-      caAddress: '0x1234567890abcdef' 
+    const timeline = await userApi.getData({ 
+      userId: '123456' 
     });
     
     // 使用函数式选项
-    const activity = await activityApi.top(
+    const activity = await dataApi.top(
       {},
       withUri('/api/custom/activity'),
       withAuth('bearer-token'),
@@ -114,8 +114,8 @@ const httpBuilder = new FetchHttpBuilder('https://api.example.com');
 const client = new UnifiedApiClient(httpBuilder);
 
 // 通过属性访问各个 Controller
-const result1 = await client.twitter.searchTimeline({ caAddress: '0x...' });
-const result2 = await client.activity.top({}, withUri('/custom/uri'));
+const result1 = await client.user.getData({ userId: '123' });
+const result2 = await client.data.getTop({}, withUri('/custom/uri'));
 ```
 
 ## 🎛️ Go 风格函数式选项模式
@@ -135,31 +135,31 @@ import {
 ### 使用示例
 
 ```typescript
-import { TwitterApi } from './generated';
+import { UserApi } from './generated';
 import { withUri, withAuth, withHeader, withTimeout, combineOptions } from './generated/types';
 
-const api = new TwitterApi(httpBuilder);
+const api = new UserApi(httpBuilder);
 
 // 1. 基本调用
-await api.searchTimeline({ caAddress: '0x...' });
+await api.getData({ userId: '123' });
 
 // 2. 使用单个选项
-await api.searchTimeline(
-  { caAddress: '0x...' },
-  withUri('/api/v2/twitter/search')
+await api.getData(
+  { userId: '123' },
+  withUri('/api/v2/user/search')
 );
 
 // 3. 使用多个选项
-await api.searchTimeline(
-  { caAddress: '0x...' },
-  withUri('/api/custom/twitter'),
+await api.getData(
+  { userId: '123' },
+  withUri('/api/custom/user'),
   withAuth('your-jwt-token'),
   withTimeout(5000)
 );
 
 // 4. 灵活的选项组合
-await api.searchTimeline(
-  { caAddress: '0x...' },
+await api.getData(
+  { userId: '123' },
   withHeader('X-Request-ID', 'unique-123'),
   withHeader('X-Client-Version', '1.0.0'),
   withContentType('application/json; charset=utf-8')
@@ -171,8 +171,8 @@ const authOptions = combineOptions(
   withHeader('X-Client', 'web-app')
 );
 
-await api.searchTimeline(
-  { caAddress: '0x...' },
+await api.getData(
+  { userId: '123' },
   authOptions,
   withTimeout(10000)
 );
@@ -197,32 +197,32 @@ await api.searchTimeline(
 ### 1. 使用 Fetch 实现
 ```typescript
 import { FetchHttpBuilder } from 'ts-sdk-client';
-import { TwitterApi } from './generated';
+import { UserApi } from './generated';
 
 const httpBuilder = new FetchHttpBuilder('https://api.example.com');
-const twitterApi = new TwitterApi(httpBuilder);
+const userApi = new UserApi(httpBuilder);
 ```
 
 ### 2. 使用 Axios 实现
 ```typescript
 import axios from 'axios';
 import { AxiosHttpBuilder } from 'ts-sdk-client';
-import { TwitterApi } from './generated';
+import { UserApi } from './generated';
 
 const axiosInstance = axios.create({ timeout: 10000 });
 const httpBuilder = new AxiosHttpBuilder('https://api.example.com', axiosInstance);
-const twitterApi = new TwitterApi(httpBuilder);
+const userApi = new UserApi(httpBuilder);
 ```
 
 ### 3. 使用 Gateway SDK 实现
 ```typescript
 import { createClient, HeaderBuilder } from 'gateway-ts-sdk';
 import { GatewayHttpBuilder } from 'ts-sdk-client';
-import { TwitterApi } from './generated';
+import { UserApi } from './generated';
 
 const gatewayClient = createClient('ws://localhost:18443', 'my-client');
 const httpBuilder = new GatewayHttpBuilder('https://api.example.com', gatewayClient, HeaderBuilder);
-const twitterApi = new TwitterApi(httpBuilder);
+const userApi = new UserApi(httpBuilder);
 ```
 
 ## 🛠️ CLI 选项
@@ -350,9 +350,6 @@ ts-sdk-client-generator/
 │   ├── code-generator.test.ts   # 代码生成器测试
 │   ├── openapi-parser.test.ts   # 解析器测试
 │   └── openapi-versions.test.ts # 版本兼容性测试
-├── examples/                    # 使用示例
-│   ├── simple-usage.js         # 简单使用示例
-│   └── usage.ts                # TypeScript 使用示例
 ├── dist/                        # 编译输出
 ├── package.json                 # 项目配置
 ├── tsconfig.json               # TypeScript 配置

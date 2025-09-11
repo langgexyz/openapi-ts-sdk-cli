@@ -290,7 +290,7 @@ describe('OpenAPIParser', () => {
       const testCases = [
         { operationId: 'UserController_getUsers', expected: 'GetUsersRequest' },
         { operationId: 'Activity20250407_top', expected: 'Activity20250407TopRequest' },
-        { operationId: 'twitter_record', expected: 'TwitterRecordRequest' }
+        { operationId: 'user_record', expected: 'UserRecordRequest' }
       ];
 
       testCases.forEach(({ operationId, expected }) => {
