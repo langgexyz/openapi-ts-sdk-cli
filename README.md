@@ -16,6 +16,8 @@
 - 🔄 **向后兼容**：提供统一客户端类，平滑迁移
 - 🎨 **自定义支持**：动态 URI、自定义 Headers、超时控制
 - 📚 **完整文档**：自动生成 JSDoc 注释和使用示例
+- 🔗 **多输入源**：支持本地文件和网络 URL（HTTP/HTTPS）输入
+- ⚡ **智能检测**：自动识别输入类型并选择合适的读取方式
 
 ## 🚀 快速开始
 
@@ -32,8 +34,11 @@ npm install ts-sdk-client-generator --save-dev
 ### 基本使用
 
 ```bash
-# 1. 生成 API 客户端
+# 1. 生成 API 客户端（本地文件）
 ts-sdk-generator generate -i ./openapi.json -o ./generated
+
+# 1. 生成 API 客户端（网络地址）
+ts-sdk-generator generate -i https://api.example.com/openapi.json -o ./generated
 
 # 2. 安装生成的依赖
 cd ./generated
@@ -224,26 +229,37 @@ const twitterApi = new TwitterApi(httpBuilder);
 
 | 选项 | 描述 | 默认值 | 示例 |
 |------|------|--------|------|
-| `-i, --input <file>` | OpenAPI 规范文件 (JSON/YAML) | 必需 | `-i ./api.json` |
+| `-i, --input <file>` | OpenAPI 规范文件 (JSON) 或 URL | 必需 | `-i ./api.json` 或 `-i https://api.example.com/openapi.json` |
 | `-o, --output <dir>` | 输出目录 | `./generated` | `-o ./src/api` |
 | `-n, --name <name>` | 生成的类名前缀 | 从项目名称推断 | `-n MyAPI` |
 | `-p, --package <package>` | ts-sdk-client 包名 | `ts-sdk-client` | `-p @my/ts-sdk` |
-| `-t, --template <template>` | 代码模板类型 | `default` | `-t minimal` |
 | `--help` | 显示帮助信息 | - | `--help` |
 | `--version` | 显示版本信息 | - | `--version` |
 
 ### 使用示例
 
 ```bash
-# 基本用法
+# 基本用法（本地文件）
 ts-sdk-generator generate -i ./openapi.json -o ./generated
 
-# 自定义配置
+# 基本用法（网络地址）
+ts-sdk-generator generate -i https://api.example.com/openapi.json -o ./generated
+
+# 从 GitHub 仓库获取
+ts-sdk-generator generate -i https://raw.githubusercontent.com/user/repo/main/openapi.json -o ./generated
+
+# 自定义配置（网络地址）
 ts-sdk-generator generate \
-  -i ./api-spec.yaml \
+  -i https://api.mycompany.com/docs/openapi.json \
   -o ./src/api \
   -n MyCompanyAPI \
   -p @mycompany/api-client
+
+# 验证 OpenAPI 规范（本地文件）
+ts-sdk-generator validate -i ./openapi.json
+
+# 验证 OpenAPI 规范（网络地址）
+ts-sdk-generator validate -i https://api.example.com/openapi.json
 
 # 查看帮助
 ts-sdk-generator --help

@@ -2,6 +2,8 @@
 
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
+import http from 'http';
 import { Command } from 'commander';
 import { OpenAPIParser, OpenAPISpec } from './generator/openapi-parser';
 import { CodeGenerator } from './generator/code-generator';
@@ -17,6 +19,48 @@ interface PackageJsonStructure {
   devDependencies?: Record<string, string>;
 }
 
+/**
+ * 检测输入是否为 URL
+ */
+function isUrl(input: string): boolean {
+  return input.startsWith('http://') || input.startsWith('https://');
+}
+
+/**
+ * 从 URL 获取内容
+ */
+function fetchFromUrl(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https://') ? https : http;
+    
+    const request = client.get(url, (response) => {
+      if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300)) {
+        reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
+        return;
+      }
+
+      let data = '';
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        resolve(data);
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(new Error(`网络请求失败: ${error.message}`));
+    });
+
+    // 设置超时
+    request.setTimeout(30000, () => {
+      request.destroy();
+      reject(new Error('请求超时 (30s)'));
+    });
+  });
+}
+
 const program = new Command();
 
 program
@@ -27,7 +71,7 @@ program
 program
   .command('generate')
   .description('Generate API client from OpenAPI spec')
-  .option('-i, --input <file>', 'OpenAPI specification file (JSON or YAML)')
+  .option('-i, --input <file>', 'OpenAPI specification file (JSON) or URL (http://|https://)')
   .option('-o, --output <dir>', 'Output directory', './generated')
   .option('-n, --name <name>', 'Generated class name prefix')
   .option('-p, --package <package>', 'ts-sdk-client package name', 'ts-sdk-client')
@@ -35,7 +79,10 @@ program
     const { input, output, name, package: packageName } = options;
     
     if (!input) {
-      console.error('❌ Input file is required. Use -i or --input to specify the OpenAPI file.');
+      console.error('❌ Input file or URL is required. Use -i or --input to specify the OpenAPI file or URL.');
+      console.error('   示例:');
+      console.error('   -i ./openapi.json                    # 本地文件');
+      console.error('   -i https://api.example.com/openapi   # 网络地址');
       process.exit(1);
     }
 
@@ -44,14 +91,40 @@ program
       console.log(`📄 Input: ${input}`);
       console.log(`📁 Output: ${output}`);
       
-      // 读取 OpenAPI 文件
-      const specContent = fs.readFileSync(input, 'utf-8');
+      // 读取 OpenAPI 文件（支持本地文件和 URL）
+      let specContent: string;
+      
+      if (isUrl(input)) {
+        console.log('🌐 从网络地址获取 OpenAPI 规范...');
+        try {
+          specContent = await fetchFromUrl(input);
+          console.log('✅ 网络获取成功');
+        } catch (fetchError) {
+          const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+          console.error(`❌ 网络获取失败: ${errorMessage}`);
+          process.exit(1);
+        }
+      } else {
+        console.log('📂 从本地文件读取 OpenAPI 规范...');
+        try {
+          specContent = fs.readFileSync(input, 'utf-8');
+          console.log('✅ 本地文件读取成功');
+        } catch (fileError) {
+          const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
+          console.error(`❌ 本地文件读取失败: ${errorMessage}`);
+          process.exit(1);
+        }
+      }
+      
       let spec: OpenAPISpec;
       
       try {
         spec = JSON.parse(specContent);
       } catch (jsonError) {
-        console.error('❌ Failed to parse JSON. YAML support coming soon.');
+        console.error('❌ JSON 解析失败。当前仅支持 JSON 格式，YAML 支持即将推出。');
+        if (process.env.DEBUG) {
+          console.error('解析错误详情:', jsonError);
+        }
         process.exit(1);
       }
 
@@ -195,17 +268,43 @@ program
 program
   .command('validate')
   .description('Validate OpenAPI specification')
-  .option('-i, --input <file>', 'OpenAPI specification file')
-  .action((options) => {
+  .option('-i, --input <file>', 'OpenAPI specification file or URL')
+  .action(async (options) => {
     const { input } = options;
     
     if (!input) {
-      console.error('❌ Input file is required');
+      console.error('❌ Input file or URL is required');
       process.exit(1);
     }
 
     try {
-      const specContent = fs.readFileSync(input, 'utf-8');
+      console.log(`🔍 Validating OpenAPI specification: ${input}`);
+      
+      // 读取 OpenAPI 文件（支持本地文件和 URL）
+      let specContent: string;
+      
+      if (isUrl(input)) {
+        console.log('🌐 从网络地址获取 OpenAPI 规范...');
+        try {
+          specContent = await fetchFromUrl(input);
+          console.log('✅ 网络获取成功');
+        } catch (fetchError) {
+          const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+          console.error(`❌ 网络获取失败: ${errorMessage}`);
+          process.exit(1);
+        }
+      } else {
+        console.log('📂 从本地文件读取 OpenAPI 规范...');
+        try {
+          specContent = fs.readFileSync(input, 'utf-8');
+          console.log('✅ 本地文件读取成功');
+        } catch (fileError) {
+          const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
+          console.error(`❌ 本地文件读取失败: ${errorMessage}`);
+          process.exit(1);
+        }
+      }
+      
       const spec = JSON.parse(specContent);
       
       // 基本验证
