@@ -3,6 +3,7 @@
  */
 
 import { APIOperation, TypeDefinition } from './openapi-parser';
+import { Json, ClassArray } from 'ts-json';
 
 /**
  * 模板策略接口
@@ -94,7 +95,7 @@ ${validationCode}
       .setUri('${operation.path}');
     
     if (${requestArg} !== undefined) {
-      builder = builder.setContent(JSON.stringify(${requestArg}));
+      builder = builder.setContent(new Json().toJson(${requestArg}));
     }
     
     // 创建API配置对象
@@ -124,11 +125,21 @@ ${validationCode}
     }
     
       try {
-        const parsed = JSON.parse(response);
-        // 如果有具体的响应类型，使用 class-transformer 转换
+        // 如果有具体的响应类型，使用 ts-json 反序列化
         ${operation.responseType && operation.responseType !== 'any' ? `
-        return plainToClass(${operation.responseType.split('.').pop()}, parsed);` : `
-        return parsed;`}
+        const ResponseClass = ${operation.responseType.split('.').pop()};
+        // 检查是否是数组类型（响应类型名包含Array或以[]结尾）
+        const isArrayResponse = '${operation.responseType}'.includes('Array') || '${operation.responseType}'.endsWith('[]');
+        if (isArrayResponse) {
+          const [result, error] = new Json().fromJson(response, new ClassArray(ResponseClass));
+          if (error) throw error;
+          return result;
+        } else {
+          const [result, error] = new Json().fromJson(response, new ResponseClass());
+          if (error) throw error;
+          return result;
+        }` : `
+        return JSON.parse(response);`}
       } catch {
         return response as any;
       }

@@ -133,6 +133,7 @@ export class CodeGenerator {
     return `// 共享类型定义和基础 API 客户端
 
 import { HttpBuilder, HttpMethod } from 'ts-sdk-client';
+import { Json, ClassArray } from 'ts-json';
 
 // API 配置接口
 export interface APIConfig {
@@ -216,7 +217,7 @@ export abstract class APIClient {
     
     // 添加请求体（如果有）
     if (request) {
-      httpBuilder.setContent(JSON.stringify(request));
+      httpBuilder.setContent(new Json().toJson(request));
     }
     
     const http = httpBuilder.build();
@@ -226,7 +227,12 @@ export abstract class APIClient {
       throw error;
     }
     
-    return JSON.parse(response);
+    // 使用ts-json进行反序列化，支持复杂类型
+    try {
+      return JSON.parse(response); // 对于通用的executeRequest保持兼容性
+    } catch {
+      return response as TResponse;
+    }
   }
 }
 `;
@@ -242,7 +248,7 @@ export abstract class APIClient {
     let output = `import 'reflect-metadata';
 import { HttpMethod } from '${packageName}';
 import { APIClient, APIOption, APIConfig } from './types';
-import { plainToClass, Type, Transform } from 'class-transformer';
+import { Json, ClassArray } from 'ts-json';
 import { IsString, IsNumber, IsBoolean, IsOptional, IsEmail, Min, Max, MinLength, MaxLength, Matches, validate } from 'class-validator';
 
 export namespace ${className} {`;
