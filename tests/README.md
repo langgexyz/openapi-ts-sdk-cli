@@ -10,7 +10,7 @@ tests/
 ├── integration/                          # 集成测试（预留）
 ├── fixtures/                            # 测试数据
 │   └── openapi-specs/                  # OpenAPI 规范样例
-│       └── multi-path-params.json     # 多路径参数测试用例
+│       └── comprehensive-api-test.json # 综合API功能测试规范
 ├── setup.ts                            # 测试环境设置
 └── README.md                           # 本文档
 ```
@@ -79,18 +79,30 @@ tests/
 #### **fixtures/openapi-specs/**
 存放各种 OpenAPI 规范测试用例：
 
-- **multi-path-params.json**: 完整的多路径参数测试用例
-  - 📋 **基础功能**: 双层路径参数 `/api/orders/{orderId}/items/{itemId}`
-  - 🔗 **三层嵌套**: `/api/users/{userId}/posts/{postId}/comments/{commentId}`
-  - 🏢 **五层嵌套**: `/api/v1/organizations/{orgId}/departments/{deptId}/teams/{teamId}/members/{memberId}`
-  - 📁 **复杂业务**: `/api/v2/projects/{projectId}/milestones/{milestoneId}/tasks/{taskId}/attachments/{attachmentId}`
-  - ✅ **验证功能**:
-    - 版本前缀处理 (v1, v2)
-    - 复杂方法名生成 (`getV1OrganizationsDepartmentsTeamsMembersById`)
-    - 多种HTTP方法 (GET, POST, PUT, PATCH, DELETE)
-    - 查询参数和Header参数处理
-    - 完整的Schema验证规则 (pattern, enum, min/max)
-    - 各种数据类型验证 (string, number, array, object)
+- **comprehensive-api-test.json**: 🌟 **企业级综合API功能测试规范**
+  
+  这是一个功能完整的 OpenAPI 3.0 测试规范，涵盖了所有核心功能和复杂场景：
+  
+  📊 **API 模块覆盖** (4个业务模块):
+  - 🛒 **订单管理** (`orders`): 商品订单和订单项管理
+  - 👥 **用户管理** (`users`): 用户、帖子、评论体系
+  - 🏢 **组织管理** (`organizations`): 企业组织架构管理 
+  - 📁 **项目管理** (`projects`): 项目里程碑和任务管理
+  
+  🎯 **路径复杂度递进** (2-5层参数):
+  - 🟢 **双层**: `/api/orders/{orderId}/items/{itemId}`
+  - 🟡 **三层**: `/api/users/{userId}/posts/{postId}/comments/{commentId}`
+  - 🟠 **四层**: `/api/v1/organizations/{orgId}/departments/{deptId}/teams/{teamId}/members/{memberId}`
+  - 🔴 **五层**: `/api/v2/projects/{projectId}/milestones/{milestoneId}/tasks/{taskId}/attachments/{attachmentId}`
+  
+  🔧 **核心功能验证**:
+  - ✅ 版本前缀处理 (v1, v2)
+  - ✅ 智能方法名生成 (`getV1OrganizationsDepartmentsTeamsMembersById`)
+  - ✅ 全HTTP方法支持 (GET, POST, PUT, PATCH, DELETE)
+  - ✅ 多种参数类型 (路径、查询、Header、RequestBody)
+  - ✅ 完整Schema验证 (pattern, enum, min/max, format)
+  - ✅ 复杂数据结构 (嵌套对象、数组、枚举)
+  - ✅ 业务场景模拟 (权限验证、文件处理、状态管理)
 
 ### 🎯 后续计划
 
