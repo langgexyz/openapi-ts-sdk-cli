@@ -64,8 +64,8 @@ function fetchFromUrl(url: string): Promise<string> {
 const program = new Command();
 
 program
-  .name('ts-sdk-generator')
-  .description('Generate TypeScript API clients from OpenAPI specifications using ts-sdk-client')
+  .name('openapi-ts-sdk-cli')
+  .description('A powerful CLI tool to generate TypeScript SDK clients from OpenAPI specifications')
   .version('1.0.0');
 
 program

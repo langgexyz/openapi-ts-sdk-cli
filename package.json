@@ -1,12 +1,12 @@
 {
-  "name": "ts-sdk-client-generator",
+  "name": "openapi-ts-sdk-cli",
   "version": "1.0.0",
-  "description": "Generate TypeScript API clients from OpenAPI specifications using ts-sdk-client",
+  "description": "A powerful CLI tool to generate TypeScript SDK clients from OpenAPI specifications",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "commonjs",
   "bin": {
-    "ts-sdk-generator": "dist/cli.js"
+    "openapi-ts-sdk-cli": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -26,12 +26,14 @@
     "prepublishOnly": "npm run clean:build && npm run test:all"
   },
   "keywords": [
-    "typescript",
     "openapi",
+    "typescript",
     "sdk",
+    "cli",
     "api-client",
     "code-generator",
-    "swagger"
+    "swagger",
+    "client-generator"
   ],
   "author": "",
   "license": "MIT",

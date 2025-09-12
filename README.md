@@ -1,10 +1,10 @@
-# TypeScript SDK Client Generator
+# OpenAPI TypeScript SDK CLI
 
-[![npm version](https://badge.fury.io/js/ts-sdk-client-generator.svg)](https://badge.fury.io/js/ts-sdk-client-generator)
+[![npm version](https://badge.fury.io/js/openapi-ts-sdk-cli.svg)](https://badge.fury.io/js/openapi-ts-sdk-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](http://www.typescriptlang.org/)
 
-一个强大的 TypeScript 代码生成器，能够从 OpenAPI 规范自动生成类型安全的 API 客户端代码。生成的客户端基于 [ts-sdk-client](../ts-sdk-client) 架构，支持多种 HTTP 实现和 Go 风格的函数式选项模式。
+一个强大的命令行工具，能够从 OpenAPI 规范自动生成类型安全的 TypeScript SDK 客户端代码。生成的客户端基于 [ts-sdk-client](../ts-sdk-client) 架构，支持多种 HTTP 实现和 Go 风格的函数式选项模式。
 
 ## ✨ 特性
 
@@ -25,20 +25,20 @@
 
 ```bash
 # 全局安装
-npm install -g ts-sdk-client-generator
+npm install -g openapi-ts-sdk-cli
 
 # 或本地安装
-npm install ts-sdk-client-generator --save-dev
+npm install openapi-ts-sdk-cli --save-dev
 ```
 
 ### 基本使用
 
 ```bash
 # 1. 生成 API 客户端（本地文件）
-ts-sdk-generator generate -i ./openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i ./openapi.json -o ./generated
 
 # 1. 生成 API 客户端（网络地址）
-ts-sdk-generator generate -i https://api.example.com/openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i https://api.example.com/openapi.json -o ./generated
 
 # 2. 安装生成的依赖
 cd ./generated
@@ -52,7 +52,7 @@ npm install
 ```bash
 # 克隆项目
 git clone <repository-url>
-cd ts-sdk-client-generator
+cd openapi-ts-sdk-cli
 
 # 安装依赖
 npm install
@@ -240,29 +240,29 @@ const userApi = new UserApi(httpBuilder);
 
 ```bash
 # 基本用法（本地文件）
-ts-sdk-generator generate -i ./openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i ./openapi.json -o ./generated
 
 # 基本用法（网络地址）
-ts-sdk-generator generate -i https://api.example.com/openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i https://api.example.com/openapi.json -o ./generated
 
 # 从 GitHub 仓库获取
-ts-sdk-generator generate -i https://raw.githubusercontent.com/user/repo/main/openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i https://raw.githubusercontent.com/user/repo/main/openapi.json -o ./generated
 
 # 自定义配置（网络地址）
-ts-sdk-generator generate \
+openapi-ts-sdk-cli generate \
   -i https://api.mycompany.com/docs/openapi.json \
   -o ./src/api \
   -n MyCompanyAPI \
   -p @mycompany/api-client
 
 # 验证 OpenAPI 规范（本地文件）
-ts-sdk-generator validate -i ./openapi.json
+openapi-ts-sdk-cli validate -i ./openapi.json
 
 # 验证 OpenAPI 规范（网络地址）
-ts-sdk-generator validate -i https://api.example.com/openapi.json
+openapi-ts-sdk-cli validate -i https://api.example.com/openapi.json
 
 # 查看帮助
-ts-sdk-generator --help
+openapi-ts-sdk-cli --help
 ```
 
 ## 💻 编程 API
@@ -270,7 +270,7 @@ ts-sdk-generator --help
 除了 CLI 工具，你也可以在 Node.js 代码中直接使用生成器：
 
 ```typescript
-import { OpenAPIParser, CodeGenerator, generateFromSpec } from 'ts-sdk-client-generator';
+import { OpenAPIParser, CodeGenerator, generateFromSpec } from 'openapi-ts-sdk-cli';
 
 // 方式 1: 使用便捷函数
 const code = await generateFromSpec(openApiSpec, {
@@ -338,7 +338,7 @@ npm run test:coverage
 ## 📁 项目结构
 
 ```
-ts-sdk-client-generator/
+openapi-ts-sdk-cli/
 ├── src/                          # 源代码
 │   ├── cli.ts                   # CLI 入口
 │   ├── index.ts                 # 主入口文件
@@ -372,7 +372,7 @@ ts-sdk-client-generator/
 ```bash
 # 克隆项目
 git clone <repository-url>
-cd ts-sdk-client-generator
+cd openapi-ts-sdk-cli
 
 # 安装依赖
 npm install
