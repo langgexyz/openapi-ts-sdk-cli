@@ -249,16 +249,12 @@ program
       console.log(`   cd ${output}`);
       console.log('   npm install');
       console.log('   # 使用示例:');
-      console.log('   # import { DataApi, UserApi } from "./index";');
-      console.log('   # import { withUri, withHeader, withHeaders } from "./types";');
+      console.log('   # import { User } from "./index";');
+      console.log('   # import { HttpBuilder } from "ts-sdk-client";');
       console.log('   # ');
-      console.log('   # const userApi = new UserApi(httpBuilder);');
-      console.log('   # const result = await userApi.record(');
-      console.log('   #   { data: {...} },');
-      console.log('   #   withUri("/custom/path"),');
-      console.log('   #   withHeader("X-Request-ID", "unique-id"),');
-      console.log('   #   withHeaders({ "X-Custom": "value" })');
-      console.log('   # );');
+      console.log('   # const httpBuilder = new HttpBuilder("http://localhost:3000");');
+      console.log('   # const userApi = new User.Client(httpBuilder);');
+      console.log('   # const result = await userApi.getUsers();');
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

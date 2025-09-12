@@ -16,7 +16,7 @@ export interface TemplateStrategy {
   /**
    * 生成模板内容
    */
-  generate(data: any): string;
+  generate(data: Record<string, unknown>): string;
 }
 
 /**
@@ -37,8 +37,6 @@ export abstract class AbstractTemplateStrategy implements TemplateStrategy {
   withUri,
   withHeader, 
   withHeaders,
-  withQueryParams,
-  withTimeout
 } from '${packageName}';
 
 `;
@@ -62,16 +60,7 @@ export abstract class AbstractTemplateStrategy implements TemplateStrategy {
    * @returns {Promise<${operation.responseType}>} Returns API response result
    * 
    * @example
-   * // Basic usage
-   * const result = await api.${methodName}(${requestParam});
-   * 
-   * @example 
-   * // Using options
-   * const result = await api.${methodName}(${requestParam ? requestParam + ', ' : ''}
-   *   withUri('/custom/path'),
-   *   withHeader('X-Request-ID', 'unique-id'),
-   *   withHeaders({ 'X-Custom': 'value' })
-   * );
+   * const result = await api.${methodName}(${requestParam ? requestParam.replace(', ', '') : ''});
    * 
    * @throws {Error} Throws error when request fails or parameter validation fails
    */`;
@@ -251,8 +240,6 @@ export {
   withUri,
   withHeader,
   withHeaders,
-  withQueryParams,
-  withTimeout
 } from 'openapi-ts-sdk';
 
 // 导出所有API类

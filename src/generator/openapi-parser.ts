@@ -2,7 +2,6 @@
  * OpenAPI 解析器 - 将 OpenAPI 规范解析为可用于代码生成的数据结构
  */
 
-import { ParsingStrategyManager } from './parsing-strategies';
 import { OpenAPIV3 } from 'openapi-types';
 import { pascalCase } from 'change-case';
 
@@ -68,10 +67,7 @@ interface PathAnalysis {
 }
 
 export class OpenAPIParser {
-  private strategyManager: ParsingStrategyManager;
-
   constructor() {
-    this.strategyManager = new ParsingStrategyManager();
   }
 
   parse(spec: OpenAPISpec): APIGroup[] {
@@ -81,8 +77,10 @@ export class OpenAPIParser {
     // 解析 schemas 生成类型 - 使用策略模式
     if (spec.components?.schemas) {
       for (const [name, schema] of Object.entries(spec.components.schemas)) {
-        const parsedType = this.strategyManager.parseByStrategy('schema-parsing', { name, schema }) as TypeDefinition;
-        allTypes.set(parsedType.name, parsedType);
+        if (this.isSchemaObject(schema)) {
+          const parsedType = this.parseSchema(name, schema);
+          allTypes.set(parsedType.name, parsedType);
+        }
       }
     }
 
@@ -95,18 +93,30 @@ export class OpenAPIParser {
 
       for (const op of operations) {
         // 使用策略模式解析操作
-        const parsedOp = this.strategyManager.parseByStrategy('operation-parsing', op) as APIOperation;
+        const parsedOp: APIOperation = {
+          name: op.operationId!,
+          method: op.method.toLowerCase(),
+          path: op.path,
+          summary: op.summary,
+          description: op.description,
+          requestType: op.requestBody ? `${this.extractTypeNameFromOperationId(op.operationId)}Request` : undefined,
+          responseType: `${this.extractTypeNameFromOperationId(op.operationId)}Response`
+        };
         parsedOperations.push(parsedOp);
         
         // 生成请求/响应类型（去重） - 使用策略模式
         if (op.requestBody) {
           const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Request`;
-          const requestType = this.strategyManager.parseByStrategy('request-type-parsing', { operation: op, typeName }) as TypeDefinition;
+          const requestType = this.parseRequestType(op);
           allTypes.set(requestType.name, requestType);
         }
         if (op.responses) {
           const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Response`;
-          const responseType = this.strategyManager.parseByStrategy('response-type-parsing', { operation: op, typeName }) as TypeDefinition;
+          const responseType: TypeDefinition = {
+            name: typeName,
+            description: op.summary || `${op.operationId} 响应类型`,
+            properties: { data: { type: 'any', required: false, description: '响应数据' } }
+          };
           allTypes.set(responseType.name, responseType);
         }
       }
@@ -163,7 +173,14 @@ export class OpenAPIParser {
         }
         
         const match = operation.operationId.match(/^([a-zA-Z]+?)(?:controller)?[_]([a-zA-Z]+)/i);
-        if (!match) {\n          const pathSegments = path.split('/').filter(Boolean);\n          // 更智能地提取控制器名称\n          const controllerName = pathSegments.length > 1 ? pathSegments[1] : \n                               pathSegments.length > 0 ? pathSegments[0] : 'your';\n          const methodName = this.extractMethodFromPath(path, method);\n          const suggestedId = `${controllerName}Controller_${methodName}`;\n
+        if (!match) {
+          const pathSegments = path.split('/').filter(Boolean);
+          // 更智能地提取控制器名称
+          const controllerName = pathSegments.length > 1 ? pathSegments[1] : 
+                               pathSegments.length > 0 ? pathSegments[0] : 'your';
+          const methodName = this.extractMethodFromPath(path, method);
+          const suggestedId = `${controllerName}Controller_${methodName}`;
+
           
           errors.push(
             `❌ ${method.toUpperCase()} ${path}: operationId "${operation.operationId}" 格式不正确\n` +
@@ -179,14 +196,18 @@ export class OpenAPIParser {
         tag = this.toPascalCase(controllerName);
         
         // 调试信息：显示分组结果
-        if (process.env.DEBUG) {
-          console.log(`📊 ${method.toUpperCase()} ${path} → ${tag} (operationId: ${operation.operationId})`);
-        }
         
         if (!groups[tag]) {
           groups[tag] = [];
         }
-        groups[tag].push({ path, method, ...operation });
+        // 类型转换，确保类型兼容
+        const operationWithPath: OperationWithPath = {
+          path,
+          method,
+          ...operation,
+          parameters: operation.parameters as Parameter[] | undefined
+        };
+        groups[tag].push(operationWithPath);
       }
     }
     
@@ -410,7 +431,22 @@ export class OpenAPIParser {
   }
 
 
-  /**\n   * 类型守卫：检查是否为SchemaObject\n   */\n  private isSchemaObject(obj: unknown): obj is SchemaObject {\n    return typeof obj === 'object' && obj !== null && !('$ref' in obj);\n  }\n\n  /**\n   * 类型守卫：检查是否为ReferenceObject\n   */\n  private isReferenceObject(obj: unknown): obj is OpenAPIV3.ReferenceObject {\n    return typeof obj === 'object' && obj !== null && '$ref' in obj;\n  }\n\n  private parseSchema(name: string, schema: SchemaObject): TypeDefinition {\n
+  /**
+   * 类型守卫：检查是否为SchemaObject
+   */
+  private isSchemaObject(obj: unknown): obj is SchemaObject {
+    return typeof obj === 'object' && obj !== null && !('$ref' in obj);
+  }
+
+  /**
+   * 类型守卫：检查是否为ReferenceObject
+   */
+  private isReferenceObject(obj: unknown): obj is OpenAPIV3.ReferenceObject {
+    return typeof obj === 'object' && obj !== null && '$ref' in obj;
+  }
+
+  private parseSchema(name: string, schema: SchemaObject): TypeDefinition {
+
     const properties: Record<string, TypeProperty> = {};
     
     if (schema.properties) {
@@ -421,19 +457,19 @@ export class OpenAPIParser {
         properties[propName] = {
           type: prop.type || 'string', // 默认为string而不是any
           required: schema.required?.includes(propName) || false,
-          description: prop.description,
-          // OpenAPI 验证属性
-          format: prop.format,
-          pattern: prop.pattern,
-          minimum: prop.minimum,
-          maximum: prop.maximum,
-          exclusiveMinimum: typeof prop.exclusiveMinimum === 'number' ? prop.exclusiveMinimum : undefined,
-          exclusiveMaximum: typeof prop.exclusiveMaximum === 'number' ? prop.exclusiveMaximum : undefined,
-          minLength: prop.minLength,
-          maxLength: prop.maxLength,
-          minItems: prop.minItems,
-          maxItems: prop.maxItems,
-          uniqueItems: prop.uniqueItems
+          description: this.isSchemaObject(propSchema) ? propSchema.description : undefined,
+          // OpenAPI 验证属性（只有当是 SchemaObject 时才访问）
+          format: this.isSchemaObject(propSchema) ? propSchema.format : undefined,
+          pattern: this.isSchemaObject(propSchema) ? propSchema.pattern : undefined,
+          minimum: this.isSchemaObject(propSchema) ? propSchema.minimum : undefined,
+          maximum: this.isSchemaObject(propSchema) ? propSchema.maximum : undefined,
+          exclusiveMinimum: this.isSchemaObject(propSchema) && typeof propSchema.exclusiveMinimum === 'number' ? propSchema.exclusiveMinimum : undefined,
+          exclusiveMaximum: this.isSchemaObject(propSchema) && typeof propSchema.exclusiveMaximum === 'number' ? propSchema.exclusiveMaximum : undefined,
+          minLength: this.isSchemaObject(propSchema) ? propSchema.minLength : undefined,
+          maxLength: this.isSchemaObject(propSchema) ? propSchema.maxLength : undefined,
+          minItems: this.isSchemaObject(propSchema) ? propSchema.minItems : undefined,
+          maxItems: this.isSchemaObject(propSchema) ? propSchema.maxItems : undefined,
+          uniqueItems: this.isSchemaObject(propSchema) ? propSchema.uniqueItems : undefined
         };
       }
     }

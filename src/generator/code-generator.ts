@@ -2,10 +2,8 @@
  * 代码生成器 - 基于解析的 OpenAPI 数据生成 TypeScript 代码
  */
 
-import Handlebars from 'handlebars';
 import { pascalCase, camelCase } from 'change-case';
 import { APIGroup, TypeDefinition, APIOperation, TypeProperty } from './openapi-parser';
-import { ValidationStrategyManager } from './validation-strategies';
 import { TemplateStrategyManager } from './template-strategies';
 
 export interface GeneratorOptions {
@@ -15,13 +13,10 @@ export interface GeneratorOptions {
 }
 
 export class CodeGenerator {
-  private validationManager: ValidationStrategyManager;
   private templateManager: TemplateStrategyManager;
 
   constructor() {
-    this.validationManager = new ValidationStrategyManager();
     this.templateManager = new TemplateStrategyManager();
-    this.registerHelpers();
   }
 
   /**
@@ -49,48 +44,6 @@ export class CodeGenerator {
     return files;
   }
 
-  /**
-   * 生成导入语句
-   */
-  private generateImports(options: GeneratorOptions): string {
-    const packageName = options.packageName || 'ts-sdk-client';
-    
-    return `import { 
-  HttpBuilder, HttpMethod 
-} from '${packageName}';
-
-`;
-  }
-
-
-
-  /**
-   * 生成客户端类名
-   */
-  private generateClientClassName(options: GeneratorOptions): string {
-    if (options.className) {
-      return options.className;
-    }
-    
-    if (options.projectName) {
-      // 从项目名称生成客户端类名
-      return this.projectNameToClassName(options.projectName);
-    }
-    
-    // 默认类名
-    return 'ApiClient';
-  }
-
-  /**
-   * 将项目名称转换为客户端类名
-   */
-  private projectNameToClassName(projectName: string): string {
-    // 处理常见的项目名称格式：kebab-case, snake_case, camelCase
-    return projectName
-      .split(/[-_]/)
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join('') + 'Client';
-  }
 
 
   /**
@@ -324,9 +277,6 @@ export namespace ${className} {`;
         const originalName = type.name.replace(new RegExp(`^${controllerName.toLowerCase()}controller`, 'i'), '')
                                       .replace(/^_/, ''); // 移除开头的下划线
         
-        if (process.env.DEBUG) {
-          console.log(`🔍 Type simplification: "${type.name}" -> "${originalName}" -> "${this.toPascalCase(originalName)}"`);
-        }
         
         const simplifiedType = {
           ...type,
@@ -338,19 +288,12 @@ export namespace ${className} {`;
     }
     
     // 收集所有操作使用的响应类型，为缺失的类型生成基础定义
-    if (process.env.DEBUG) {
-      console.log(`🔍 allOperations length: ${allOperations.length}`);
-      console.log(`🔍 controllerName: ${controllerName}`);
-    }
     
     for (const operation of allOperations) {
       const responseTypeName = operation.responseType ?
         this.getSimplifiedTypeName(operation.responseType, controllerName) : 
         this.getSimplifiedTypeName(this.generateDefaultResponseTypeName(operation), controllerName);
       
-      if (process.env.DEBUG) {
-        console.log(`🔍 Checking operation "${operation.name}": responseType="${operation.responseType}" -> simplified="${responseTypeName}"`);
-      }
       
       if (!collectedTypeNames.has(responseTypeName)) {
         // 生成基础的响应类型定义
@@ -368,13 +311,7 @@ export namespace ${className} {`;
         nestedTypes.push(basicResponseType);
         collectedTypeNames.add(responseTypeName);
         
-        if (process.env.DEBUG) {
-          console.log(`🔍 Generated basic response type: "${responseTypeName}" for operation "${operation.name}"`);
-        }
       } else {
-        if (process.env.DEBUG) {
-          console.log(`🔍 Response type "${responseTypeName}" already exists for operation "${operation.name}"`);
-        }
       }
     }
 
@@ -439,42 +376,12 @@ export namespace ${className} {`;
    * 转义正则表达式特殊字符
    */
   private escapeRegExp(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\/**
-   * 获取namespace内的类型名称，如果没有复杂类型则返回基础类型
-   */
-  private getNestedTypeName(typeName: string, controllerName?: string, hasNamespace: boolean = true): string {
-    if (!controllerName || !hasNamespace) {
-      // 如果没有namespace，返回基础类型
-      if (typeName?.toLowerCase().includes('response')) {
-        return 'any'; // 或者返回基础的响应类型
-      }
-      return typeName;
-    }
-    
-    // 多种格式的处理：
-    // 1. "order_createorderRequest" -> "createorderRequest"
-    // 2. "orderController_createorderRequest" -> "createorderRequest"
-    // 3. "CreateorderRequest" -> "CreateorderRequest"（已简化的）
-    
-    let simplifiedName = typeName;
-    
-    // 移除各种可能的前缀模式
-    simplifiedName = simplifiedName
-      .replace(new RegExp(`^${controllerName.toLowerCase()}controller_`, 'i'), '') // ordercontroller_xxx
-      .replace(new RegExp(`^${controllerName.toLowerCase()}_`, 'i'), '') // order_xxx  
-      .replace(/^_/, ''); // 移除开头的下划线
-    
-    // 转换为PascalCase
-    simplifiedName = this.toPascalCase(simplifiedName);
-    
-    if (process.env.DEBUG) {
-      console.log(`🔍 getNestedTypeName: "${typeName}" -> "${controllerName}Types.${simplifiedName}"`);
-    }
-    
-    return `${controllerName}Types.${simplifiedName}`;
-  }');
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  /**
+   * 获取namespace内的类型名称，如果没有复杂类型则返回基础类型
+   */
   /**
    * 获取namespace内的类型名称，如果没有复杂类型则返回基础类型
    */
@@ -506,9 +413,6 @@ export namespace ${className} {`;
     // 转换为PascalCase
     simplifiedName = this.toPascalCase(simplifiedName);
     
-    if (process.env.DEBUG) {
-      console.log(`🔍 getNestedTypeName: "${typeName}" -> "${controllerName}Types.${simplifiedName}"`);
-    }
     
     return `${controllerName}Types.${simplifiedName}`;
   }
@@ -631,10 +535,6 @@ ${properties}${validateMethod}
     const hasComplexResponseType = simplifiedResponseName && controllerTypes &&
       Array.from(controllerTypes.values()).some(type => type.name === simplifiedResponseName);
       
-    if (process.env.DEBUG) {
-      console.log(`🔍 Method ${methodName}: requestType="${operation.requestType}" -> "${simplifiedRequestName}", hasComplex=${hasComplexRequestType}`);
-      console.log(`🔍 ControllerTypes keys: ${Array.from(controllerTypes?.keys() || []).join(', ')}`);
-    }
 
     // 提取路径参数
     const pathParams = (operation.parameters || []).filter(p => p && p.in === 'path');
@@ -968,19 +868,6 @@ export class Client {
   /**
    * 注册 Handlebars 辅助函数
    */
-  private registerHelpers(): void {
-    Handlebars.registerHelper('capitalize', (str: string) => {
-      return str.charAt(0).toUpperCase() + str.slice(1);
-    });
-
-    Handlebars.registerHelper('lowercase', (str: string) => {
-      return str.toLowerCase();
-    });
-
-    Handlebars.registerHelper('eq', (a: unknown, b: unknown) => {
-      return a === b;
-    });
-  }
 
 }
 
