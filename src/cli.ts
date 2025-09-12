@@ -226,7 +226,7 @@ program
           prepublishOnly: 'npm run clean && npm run build'
         },
         dependencies: {
-          [packageName]: 'file:../../ts-sdk-client',
+          [packageName]: 'file:../../openapi-ts-sdk',
           'class-transformer': '^0.5.1',
           'class-validator': '^0.14.0',
           'reflect-metadata': '^0.1.13'
