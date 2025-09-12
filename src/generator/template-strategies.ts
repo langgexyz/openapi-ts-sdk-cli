@@ -253,7 +253,7 @@ export {
   withHeaders,
   withQueryParams,
   withTimeout
-} from 'ts-sdk-client';
+} from 'openapi-ts-sdk';
 
 // 导出所有API类
 ${exports}
@@ -266,7 +266,7 @@ ${imports}
  * This class provides a unified entry point for accessing all API controllers
  * 
  * @example
- * import { AxiosHttpBuilder } from 'ts-sdk-client/axios';
+ * import { AxiosHttpBuilder } from 'openapi-ts-sdk/axios';
  * import { ApiClient } from './index';
  * 
  * const httpBuilder = new AxiosHttpBuilder({ baseURL: 'https://api.example.com' });
@@ -311,7 +311,7 @@ export class PackageJsonTemplateStrategy extends AbstractTemplateStrategy {
         "test": "jest"
       },
       "dependencies": {
-        "ts-sdk-client": `file:${sdkClientPath}`,
+        "openapi-ts-sdk": `file:${sdkClientPath}`,
         "class-transformer": "^0.5.1",
         "class-validator": "^0.14.0", 
         "reflect-metadata": "^0.1.13"
