@@ -148,7 +148,9 @@ export class OpenAPIParser {
         // 验证 operationId 存在且格式正确
         if (!operation.operationId) {
           const pathSegments = path.split('/').filter(Boolean);
-          const controllerName = pathSegments[1] || 'api'; // api/users -> users
+          // 更智能地提取控制器名称
+          const controllerName = pathSegments.length > 1 ? pathSegments[1] : 
+                               pathSegments.length > 0 ? pathSegments[0] : 'api';
           const methodName = this.extractMethodFromPath(path, method);
           const suggestedId = `${controllerName}Controller_${methodName}`;
           const routePath = path.replace(`/api/${controllerName}`, '') || '/';
@@ -161,11 +163,7 @@ export class OpenAPIParser {
         }
         
         const match = operation.operationId.match(/^([a-zA-Z]+?)(?:controller)?[_]([a-zA-Z]+)/i);
-        if (!match) {
-          const pathSegments = path.split('/').filter(Boolean);
-          const controllerName = pathSegments[1] || 'your'; // api/users -> users
-          const methodName = this.extractMethodFromPath(path, method);
-          const suggestedId = `${controllerName}Controller_${methodName}`;
+        if (!match) {\n          const pathSegments = path.split('/').filter(Boolean);\n          // 更智能地提取控制器名称\n          const controllerName = pathSegments.length > 1 ? pathSegments[1] : \n                               pathSegments.length > 0 ? pathSegments[0] : 'your';\n          const methodName = this.extractMethodFromPath(path, method);\n          const suggestedId = `${controllerName}Controller_${methodName}`;\n
           
           errors.push(
             `❌ ${method.toUpperCase()} ${path}: operationId "${operation.operationId}" 格式不正确\n` +
@@ -412,13 +410,13 @@ export class OpenAPIParser {
   }
 
 
-  private parseSchema(name: string, schema: SchemaObject): TypeDefinition {
+  /**\n   * 类型守卫：检查是否为SchemaObject\n   */\n  private isSchemaObject(obj: unknown): obj is SchemaObject {\n    return typeof obj === 'object' && obj !== null && !('$ref' in obj);\n  }\n\n  /**\n   * 类型守卫：检查是否为ReferenceObject\n   */\n  private isReferenceObject(obj: unknown): obj is OpenAPIV3.ReferenceObject {\n    return typeof obj === 'object' && obj !== null && '$ref' in obj;\n  }\n\n  private parseSchema(name: string, schema: SchemaObject): TypeDefinition {\n
     const properties: Record<string, TypeProperty> = {};
     
     if (schema.properties) {
       for (const [propName, propSchema] of Object.entries(schema.properties)) {
         // 明确类型化属性模式
-        const prop = propSchema as SchemaObject;
+        const prop = this.isSchemaObject(propSchema) ? propSchema : { type: 'string' };
         
         properties[propName] = {
           type: prop.type || 'string', // 默认为string而不是any
@@ -480,7 +478,7 @@ export class OpenAPIParser {
       return { name: this.toPascalCase(refName), description: undefined, properties: {} };
     }
     
-    const parsedType = this.parseSchema(typeName, schema as SchemaObject);
+    const parsedType = this.parseSchema(typeName, this.isSchemaObject(schema) ? schema : { type: "object" });
     
     // 如果 schema 是空的 object，要求开发者完善规范
     if (Object.keys(parsedType.properties).length === 0 && (schema as SchemaObject).type === 'object') {
@@ -535,7 +533,7 @@ export class OpenAPIParser {
       return { name: this.toPascalCase(refName), description: undefined, properties: {} };
     }
     
-    const parsedType = this.parseSchema(typeName, schema as SchemaObject);
+    const parsedType = this.parseSchema(typeName, this.isSchemaObject(schema) ? schema : { type: "object" });
     
     // 如果 schema 是空的 object，要求开发者完善规范
     if (Object.keys(parsedType.properties).length === 0 && (schema as SchemaObject).type === 'object') {
@@ -581,4 +579,5 @@ export class OpenAPIParser {
 interface OperationWithPath extends OperationSpec {
   path: string;
   method: string;
+  parameters?: Parameter[]; // 添加parameters字段
 }

@@ -108,17 +108,20 @@ export class CodeGenerator {
         }
         
         // 为每个 Controller 创建独立的 API 对象
-        let controllerApi = groups.get(controllerName)!.find(a => a.className === controllerName);
-        if (!controllerApi) {
-          controllerApi = {
-            className: controllerName,
-            operations: [],
-            types: []  // 将在后面收集相关类型
-          };
-          groups.get(controllerName)!.push(controllerApi);
+        const controllerGroup = groups.get(controllerName);
+        if (controllerGroup) {
+          let controllerApi = controllerGroup.find(a => a.className === controllerName);
+          if (!controllerApi) {
+            controllerApi = {
+              className: controllerName,
+              operations: [],
+              types: []  // 将在后面收集相关类型
+            };
+            controllerGroup.push(controllerApi);
+          }
+          
+          controllerApi.operations.push(operation);
         }
-        
-        controllerApi.operations.push(operation);
       }
     }
     
@@ -433,6 +436,10 @@ export namespace ${className} {`;
   }
 
   /**
+   * 转义正则表达式特殊字符
+   */
+  private escapeRegExp(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\/**
    * 获取namespace内的类型名称，如果没有复杂类型则返回基础类型
    */
   private getNestedTypeName(typeName: string, controllerName?: string, hasNamespace: boolean = true): string {
@@ -465,6 +472,45 @@ export namespace ${className} {`;
     }
     
     return `${controllerName}Types.${simplifiedName}`;
+  }');
+  }
+
+  /**
+   * 获取namespace内的类型名称，如果没有复杂类型则返回基础类型
+   */
+  private getNestedTypeName(typeName: string, controllerName?: string, hasNamespace: boolean = true): string {
+    if (!controllerName || !hasNamespace) {
+      // 如果没有namespace，返回基础类型
+      if (typeName?.toLowerCase().includes('response')) {
+        return 'any'; // 或者返回基础的响应类型
+      }
+      return typeName;
+    }
+    
+    // 多种格式的处理：
+    // 1. "order_createorderRequest" -> "createorderRequest"
+    // 2. "orderController_createorderRequest" -> "createorderRequest"
+    // 3. "CreateorderRequest" -> "CreateorderRequest"（已简化的）
+    
+    let simplifiedName = typeName;
+    
+    // 转义controllerName以避免正则表达式问题
+    const escapedControllerName = this.escapeRegExp(controllerName.toLowerCase());
+    
+    // 移除各种可能的前缀模式
+    simplifiedName = simplifiedName
+      .replace(new RegExp(`^${escapedControllerName}controller_`, 'i'), '') // ordercontroller_xxx
+      .replace(new RegExp(`^${escapedControllerName}_`, 'i'), '') // order_xxx  
+      .replace(/^_/, ''); // 移除开头的下划线
+    
+    // 转换为PascalCase
+    simplifiedName = this.toPascalCase(simplifiedName);
+    
+    if (process.env.DEBUG) {
+      console.log(`🔍 getNestedTypeName: "${typeName}" -> "${controllerName}Types.${simplifiedName}"`);
+    }
+    
+    return `${controllerName}Types.${simplifiedName}`;
   }
 
 
@@ -473,7 +519,7 @@ export namespace ${className} {`;
    */
   private generateNamespaceInterface(type: TypeDefinition): string {
     const properties = Object.entries(type.properties)
-      .map(([name, prop]: [string, any]) => {
+      .map(([name, prop]) => {
         const decorators = this.generatePropertyDecorators(prop);
         const assertion = prop.required ? '!' : '?'; // 必需属性使用!断言，可选属性使用?
         const comment = prop.description ? ` // ${prop.description}` : '';
@@ -591,7 +637,7 @@ ${properties}${validateMethod}
     }
 
     // 提取路径参数
-    const pathParams = operation.parameters?.filter(p => p.in === 'path') || [];
+    const pathParams = (operation.parameters || []).filter(p => p && p.in === 'path');
     
     const hasRequest = !!(operation.requestType && operation.requestType !== 'void');
     const finalRequestType = hasRequest ? 
@@ -659,10 +705,43 @@ ${validationCall}
       return this.simplifyMethodName(operation.name);
     }
 
-    // 使用我们增强的路径解析逻辑
-    const parser = new (require('./openapi-parser').OpenAPIParser)();
+    // 直接实现路径解析逻辑，避免动态导入
     try {
-      const methodName = (parser as any).extractMethodFromPath(operation.path, operation.method);
+      const httpMethod = operation.method.toLowerCase();
+      const pathSegments = operation.path.split('/').filter(Boolean);
+      
+      // 分析路径结构
+      const params = pathSegments.filter(seg => seg.includes('{'));
+      const versionSegment = pathSegments.find(seg => /^v\d+$/i.test(seg));
+      const versionPrefix = versionSegment ? versionSegment.toUpperCase() : null;
+      const pathAnalysis = {
+        paramCount: params.length,
+        versionPrefix
+      };
+      
+      // 基于HTTP方法和路径结构生成方法名
+      let methodName = '';
+      
+      switch (httpMethod) {
+        case 'get':
+          methodName = this.generateGetMethodName(pathAnalysis, pathSegments);
+          break;
+        case 'post':
+          methodName = this.generatePostMethodName(pathAnalysis, pathSegments);
+          break;
+        case 'put':
+          methodName = this.generatePutMethodName(pathAnalysis, pathSegments);
+          break;
+        case 'patch':
+          methodName = this.generatePatchMethodName(pathAnalysis, pathSegments);
+          break;
+        case 'delete':
+          methodName = this.generateDeleteMethodName(pathAnalysis, pathSegments);
+          break;
+        default:
+          methodName = httpMethod;
+      }
+      
       return camelCase(methodName);
     } catch (error) {
       // 如果出错，回退到原始逻辑
@@ -671,14 +750,150 @@ ${validationCall}
   }
 
   /**
+   * 生成GET方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generateGetMethodName(analysis: any, pathSegments: string[]): string {
+    const { paramCount, versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      const baseMethodName = paramCount > 0 ? 'getById' : 'getList';
+      return versionPrefix ? `get${versionPrefix}${baseMethodName.slice(3)}` : baseMethodName;
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    
+    // 构建基础方法名
+    let baseMethodName: string;
+    if (paramCount > 0) {
+      baseMethodName = `get${resourcePath}ById`;
+    } else {
+      baseMethodName = `get${resourcePath}`;
+    }
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `get${versionPrefix}${baseMethodName.slice(3)}` : baseMethodName;
+  }
+
+  /**
+   * 生成POST方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generatePostMethodName(analysis: any, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `create${versionPrefix}` : 'create';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `create${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `create${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
+  }
+
+  /**
+   * 生成PUT方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generatePutMethodName(analysis: any, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `update${versionPrefix}` : 'update';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `update${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `update${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
+  }
+
+  /**
+   * 生成PATCH方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generatePatchMethodName(analysis: any, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `patch${versionPrefix}` : 'patch';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `patch${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `patch${versionPrefix}${baseMethodName.slice(5)}` : baseMethodName;
+  }
+
+  /**
+   * 生成DELETE方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generateDeleteMethodName(analysis: any, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `delete${versionPrefix}` : 'delete';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `delete${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `delete${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
+  }
+
+  /**
    * 获取简化的类型名称：OrderCreateorderRequest -> CreateOrderRequest
    */
   private getSimplifiedTypeName(typeName: string, controllerName?: string): string {
     if (!controllerName) return 'any'; // 没有控制器名称时返回any
     
+    // 转义controllerName以避免正则表达式问题
+    const escapedControllerName = this.escapeRegExp(controllerName.toLowerCase());
+    
     const originalName = typeName
-      .replace(new RegExp(`^${controllerName.toLowerCase()}controller_`, 'i'), '')
-      .replace(new RegExp(`^${controllerName.toLowerCase()}_`, 'i'), '')
+      .replace(new RegExp(`^${escapedControllerName}controller_`, 'i'), '')
+      .replace(new RegExp(`^${escapedControllerName}_`, 'i'), '')
       .replace(/^_/, '');
     
     return this.toPascalCase(originalName);
