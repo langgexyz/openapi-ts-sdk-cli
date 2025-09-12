@@ -8,7 +8,9 @@ tests/
 │   └── openapi-parser/                   # OpenAPI 解析器测试
 │       └── simple.test.ts               # 核心功能简单测试
 ├── integration/                          # 集成测试（预留）
-├── fixtures/                            # 测试数据（预留）
+├── fixtures/                            # 测试数据
+│   └── openapi-specs/                  # OpenAPI 规范样例
+│       └── multi-path-params.json     # 多路径参数测试用例
 ├── setup.ts                            # 测试环境设置
 └── README.md                           # 本文档
 ```
@@ -72,11 +74,23 @@ tests/
 - ✅ 稳定的测试基础设施
 - ✅ 易于扩展的架构
 
+### 📁 测试数据说明
+
+#### **fixtures/openapi-specs/**
+存放各种 OpenAPI 规范测试用例：
+
+- **multi-path-params.json**: 多路径参数测试用例
+  - 测试复杂的嵌套路径：`/api/orders/{orderId}/items/{itemId}`
+  - 测试三层嵌套路径：`/api/users/{userId}/posts/{postId}/comments/{commentId}`
+  - 验证方法名生成：`getOrdersItemsById`、`deleteUsersPostsCommentsById`
+  - 适用于验证复杂路径解析和参数处理
+
 ### 🎯 后续计划
 
 1. **逐步重新添加复杂测试**: 使用更简单的 mock 对象替代复杂的 OpenAPI 类型
-2. **增加集成测试**: 测试完整的代码生成流程
-3. **提高测试覆盖率**: 确保核心功能都有充分的测试覆盖
+2. **增加集成测试**: 测试完整的代码生成流程  
+3. **扩展测试数据**: 添加更多典型的 OpenAPI 规范用例
+4. **提高测试覆盖率**: 确保核心功能都有充分的测试覆盖
 
 ## 🚀 运行测试
 
