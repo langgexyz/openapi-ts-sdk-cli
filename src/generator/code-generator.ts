@@ -4,7 +4,7 @@
 
 import Handlebars from 'handlebars';
 import { pascalCase, camelCase } from 'change-case';
-import { ParsedAPI, ParsedType, ParsedOperation, TypeProperty } from './openapi-parser';
+import { APIGroup, TypeDefinition, APIOperation, TypeProperty } from './openapi-parser';
 import { ValidationStrategyManager } from './validation-strategies';
 import { TemplateStrategyManager } from './template-strategies';
 
@@ -27,7 +27,7 @@ export class CodeGenerator {
   /**
    * 生成 TypeScript 代码 - 支持多文件生成
    */
-  generate(apis: ParsedAPI[], options: GeneratorOptions): Map<string, string> {
+  generate(apis: APIGroup[], options: GeneratorOptions): Map<string, string> {
     const files = new Map<string, string>();
     
     // 生成共享的基础类型和基类
@@ -62,50 +62,7 @@ export class CodeGenerator {
 `;
   }
 
-  /**
-   * 生成类型定义
-   */
-  private generateTypes(types: ParsedType[]): string {
-    return types.map(type => this.generateTypeInterface(type)).join('\n');
-  }
 
-  /**
-   * 生成单个类型接口
-   */
-  private generateTypeInterface(type: ParsedType): string {
-    const properties = Object.entries(type.properties)
-      .map(([name, prop]: [string, TypeProperty]) => {
-        const optional = prop.required ? '' : '?';
-        const comment = prop.description ? ` // ${prop.description}` : '';
-        return `  ${name}${optional}: ${prop.type};${comment}`;
-      })
-      .join('\n');
-
-    return `
-export interface ${type.name} {
-${properties}
-}
-`;
-  }
-
-  /**
-   * 生成统一的客户端类
-   */
-  private generateUnifiedClientClass(operations: ParsedOperation[], options: GeneratorOptions): string {
-    const className = this.generateClientClassName(options);
-    
-    return `
-export class ${className} {
-  private httpBuilder: HttpBuilder;
-
-  constructor(httpBuilder: HttpBuilder) {
-    this.httpBuilder = httpBuilder;
-  }
-
-${operations.map(op => this.generateApiMethod(op)).join('\n')}
-}
-`;
-  }
 
   /**
    * 生成客户端类名
@@ -135,30 +92,12 @@ ${operations.map(op => this.generateApiMethod(op)).join('\n')}
       .join('') + 'Client';
   }
 
-  /**
-   * 生成 API 类 (保留用于向后兼容)
-   */
-  private generateApiClass(api: ParsedAPI, options: GeneratorOptions): string {
-    const className = options.className || api.className;
-    
-    return `
-export class ${className}Api {
-  private httpBuilder: HttpBuilder;
-
-  constructor(httpBuilder: HttpBuilder) {
-    this.httpBuilder = httpBuilder;
-  }
-
-${api.operations.map(op => this.generateApiMethod(op)).join('\n')}
-}
-`;
-  }
 
   /**
    * 按 Controller 分组 API
    */
-  private groupByController(apis: ParsedAPI[]): Map<string, ParsedAPI[]> {
-    const groups = new Map<string, ParsedAPI[]>();
+  private groupByController(apis: APIGroup[]): Map<string, APIGroup[]> {
+    const groups = new Map<string, APIGroup[]>();
     
     for (const api of apis) {
       // 从操作中提取 Controller 名称
@@ -340,7 +279,7 @@ export abstract class APIClient {
   /**
    * 生成单个 Controller 的 API 类
    */
-  private generateControllerApi(controllerName: string, apis: ParsedAPI[], options: GeneratorOptions): string {
+  private generateControllerApi(controllerName: string, apis: APIGroup[], options: GeneratorOptions): string {
     const packageName = options.packageName || 'ts-sdk-client';
     const className = controllerName; // 直接使用controllerName，不拼接Api后缀
     
@@ -353,8 +292,8 @@ import { IsString, IsNumber, IsBoolean, IsOptional, IsEmail, Min, Max, MinLength
 export namespace ${className} {`;
 
     // 收集该 Controller 相关的类型定义（去重）
-    const controllerTypes: Map<string, ParsedType> = new Map();
-    const allOperations: ParsedOperation[] = [];
+    const controllerTypes: Map<string, TypeDefinition> = new Map();
+    const allOperations: APIOperation[] = [];
     
     for (const api of apis) {
       // 收集相关的类型定义
@@ -412,7 +351,7 @@ export namespace ${className} {`;
       
       if (!collectedTypeNames.has(responseTypeName)) {
         // 生成基础的响应类型定义
-        const basicResponseType: ParsedType = {
+        const basicResponseType: TypeDefinition = {
           name: responseTypeName,
           description: `${operation.summary || operation.name} 响应类型`,
           properties: {
@@ -466,7 +405,7 @@ export namespace ${className} {`;
   /**
    * 生成带 options 的 API 方法 - 使用模板策略
    */
-  private generateApiMethodWithOptions(operation: ParsedOperation, controllerName?: string, hasNamespace: boolean = true): string {
+  private generateApiMethodWithOptions(operation: APIOperation, controllerName?: string, hasNamespace: boolean = true): string {
     const hasRequest = !!(operation.requestType && operation.requestType !== 'void');
     const methodName = operation.name.replace(/^.+?Controller_/, ''); // 移除 Controller 前缀
     
@@ -532,7 +471,7 @@ export namespace ${className} {`;
   /**
    * 在命名空间内生成接口定义 - 使用class-validator装饰器
    */
-  private generateNamespaceInterface(type: ParsedType): string {
+  private generateNamespaceInterface(type: TypeDefinition): string {
     const properties = Object.entries(type.properties)
       .map(([name, prop]: [string, any]) => {
         const decorators = this.generatePropertyDecorators(prop);
@@ -624,9 +563,9 @@ ${properties}${validateMethod}
   /**
    * 在命名空间内生成API方法
    */
-  private generateNamespaceApiMethod(operation: ParsedOperation, controllerName?: string, controllerTypes?: Map<string, ParsedType>): string {
-    // 简化方法名：ordercontroller_getorders -> getOrders
-    const methodName = this.simplifyMethodName(operation.name);
+  private generateNamespaceApiMethod(operation: APIOperation, controllerName?: string, controllerTypes?: Map<string, TypeDefinition>): string {
+    // 生成智能方法名：基于路径和HTTP方法
+    const methodName = this.generateIntelligentMethodName(operation);
     
     // 简化类型名，检查是否存在于controllerTypes中
     const requestType = operation.requestType ? 
@@ -696,13 +635,13 @@ ${validationCall}
   /**
    * 生成默认响应类型名
    */
-  private generateDefaultResponseTypeName(operation: ParsedOperation): string {
+  private generateDefaultResponseTypeName(operation: APIOperation): string {
     const methodName = this.simplifyMethodName(operation.name);
     return `${this.toPascalCase(methodName)}Response`;
   }
 
   /**
-   * 简化方法名：ordercontroller_getorders -> getOrders
+   * 简化方法名：基于operationId和路径智能生成方法名
    */
   private simplifyMethodName(operationName: string): string {
     // 移除控制器前缀
@@ -710,6 +649,25 @@ ${validationCall}
     
     // 转换为camelCase（首字母小写）
     return camelCase(simplified);
+  }
+
+  /**
+   * 基于路径和HTTP方法生成智能的方法名
+   */
+  private generateIntelligentMethodName(operation: APIOperation): string {
+    if (!operation.path || !operation.method) {
+      return this.simplifyMethodName(operation.name);
+    }
+
+    // 使用我们增强的路径解析逻辑
+    const parser = new (require('./openapi-parser').OpenAPIParser)();
+    try {
+      const methodName = (parser as any).extractMethodFromPath(operation.path, operation.method);
+      return camelCase(methodName);
+    } catch (error) {
+      // 如果出错，回退到原始逻辑
+      return this.simplifyMethodName(operation.name);
+    }
   }
 
   /**
@@ -727,38 +685,6 @@ ${validationCall}
   }
 
 
-  /**
-   * 生成详细的 JSDoc 注释
-   */
-  private generateJSDocComment(operation: ParsedOperation, methodName: string, hasRequest: boolean): string {
-    const summary = operation.summary || operation.description || methodName;
-    const requestParam = hasRequest ? 'request' : '';
-    
-    return `  /**
-   * ${summary}
-   * 
-   * @description ${operation.description || '执行 ' + summary + ' 操作'}
-   * @method ${operation.method.toUpperCase()}
-   * @path ${operation.path}
-   * ${hasRequest ? `@param {${operation.requestType}} request - 请求参数对象` : ''}
-   * @param {...APIOption} options - 函数式选项参数
-   * @returns {Promise<${operation.responseType}>} 返回 API 响应结果
-   * 
-   * @example
-   * // 基本调用
-   * const result = await api.${methodName}(${requestParam});
-   * 
-   * @example 
-   * // 使用选项
-   * const result = await api.${methodName}(${requestParam ? requestParam + ', ' : ''}
-   *   withUri('/custom/path'),
-   *   withHeader('X-Request-ID', 'unique-id'),
-   *   withHeaders({ 'X-Custom': 'value' })
-   * );
-   * 
-   * @throws {Error} 当请求失败或参数验证失败时抛出错误
-   */`;
-  }
 
 
   /**
@@ -819,62 +745,10 @@ export class Client {
   /**
    * 生成 API 方法（向后兼容）
    */
-  private generateApiMethod(operation: ParsedOperation): string {
+  private generateApiMethod(operation: APIOperation): string {
     return this.generateApiMethodWithOptions(operation);
   }
 
-  /**
-   * 生成使用示例
-   */
-  private generateUsageExamples(apis: ParsedAPI[], options: GeneratorOptions): string {
-    const className = this.generateClientClassName(options);
-    
-    return `
-/*
-## 使用示例
-
-### 1. 使用 Fetch 实现
-\`\`\`typescript
-import { FetchHttpBuilder } from 'ts-sdk-client';
-import { ${className} } from './api';
-
-const httpBuilder = new FetchHttpBuilder('https://api.example.com');
-const client = new ${className}(httpBuilder);
-
-// 调用 API 方法
-const result = await client.getApiData({ id: '123' });
-\`\`\`
-
-### 2. 使用 Axios 实现
-\`\`\`typescript
-import axios from 'axios';
-import { AxiosHttpBuilder } from 'ts-sdk-client';
-import { ${className} } from './api';
-
-const axiosInstance = axios.create({ timeout: 10000 });
-const httpBuilder = new AxiosHttpBuilder('https://api.example.com', axiosInstance);
-const client = new ${className}(httpBuilder);
-
-// 调用 API 方法
-const result = await client.getApiData({ id: '123' });
-\`\`\`
-
-### 3. 使用 Gateway 实现
-\`\`\`typescript
-import { createClient, HeaderBuilder } from 'gateway-ts-sdk';
-import { GatewayHttpBuilder } from 'ts-sdk-client';
-import { ${className} } from './api';
-
-const gatewayClient = createClient('ws://localhost:18443', 'my-client');
-const httpBuilder = new GatewayHttpBuilder('https://api.example.com', gatewayClient, HeaderBuilder);
-const client = new ${className}(httpBuilder);
-
-// 调用 API 方法
-const result = await client.getApiData({ id: '123' });
-\`\`\`
-*/
-`;
-  }
 
   /**
    * 注册 Handlebars 辅助函数
@@ -895,6 +769,5 @@ const result = await client.getApiData({ id: '123' });
 
 }
 
-// 重新导出 ParsedAPI 相关类型
-export * from './openapi-parser';
+// 重新导出 API 相关类型
 export * from './openapi-parser';

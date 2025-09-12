@@ -2,7 +2,7 @@
  * 基于策略模式的模板系统 - 解决硬编码模板问题
  */
 
-import { ParsedOperation, ParsedType } from './openapi-parser';
+import { APIOperation, TypeDefinition } from './openapi-parser';
 
 /**
  * 模板策略接口
@@ -47,7 +47,7 @@ export abstract class AbstractTemplateStrategy implements TemplateStrategy {
   /**
    * 通用的JSDoc注释生成
    */
-  protected generateJSDoc(operation: ParsedOperation, methodName: string, hasRequest: boolean): string {
+  protected generateJSDoc(operation: APIOperation, methodName: string, hasRequest: boolean): string {
     const summary = operation.summary || operation.description || methodName;
     const requestParam = hasRequest ? 'request' : '';
     
@@ -85,7 +85,7 @@ export class ApiMethodTemplateStrategy extends AbstractTemplateStrategy {
   name = 'api-method';
 
   generate(data: {
-    operation: ParsedOperation;
+    operation: APIOperation;
     methodName: string;
     hasRequest: boolean;
     validationCode: string;
@@ -187,7 +187,7 @@ ${methods.join('\n')}
 export class TypeInterfaceTemplateStrategy extends AbstractTemplateStrategy {
   name = 'type-interface';
 
-  generate(data: { type: ParsedType; namespace?: string }): string {
+  generate(data: { type: TypeDefinition; namespace?: string }): string {
     const { type, namespace } = data;
     
     const properties = Object.entries(type.properties)

@@ -1,13 +1,22 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  extensionsToTreatAsEsm: ['.ts'],
+  globals: {
+    'ts-jest': {
+      useESM: true
+    }
+  },
   roots: ['<rootDir>/src', '<rootDir>/tests'],
   testMatch: [
-    '**/tests/integration.test.ts'
+    '**/tests/**/*.test.ts'
   ],
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest'
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(change-case)/)'
+  ],
   collectCoverageFrom: [
     'src/**/*.{ts,js}',
     '!src/**/*.d.ts',

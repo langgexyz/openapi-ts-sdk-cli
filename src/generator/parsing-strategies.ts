@@ -2,7 +2,7 @@
  * 基于策略模式的OpenAPI解析系统 - 通用且可扩展
  */
 
-import { ParsedType, TypeProperty, ParsedOperation, ParsedParameter } from './openapi-parser';
+import { TypeDefinition, TypeProperty, APIOperation, Parameter } from './openapi-parser';
 import { OpenAPIV3 } from 'openapi-types';
 
 // 使用标准OpenAPI类型定义
@@ -75,7 +75,7 @@ export class SchemaParsingStrategy implements ParsingStrategy {
            ('type' in data || 'properties' in data || '$ref' in data));
   }
 
-  parse(schemaData: { name: string; schema: SchemaObject | ReferenceObject }): ParsedType {
+  parse(schemaData: { name: string; schema: SchemaObject | ReferenceObject }): TypeDefinition {
     const { name, schema } = schemaData;
     const properties: Record<string, TypeProperty> = {};
     
@@ -101,7 +101,21 @@ export class SchemaParsingStrategy implements ParsingStrategy {
           const refName = propSchema.$ref.split('/').pop();
           propType = refName || 'any';
         } else if (isSchemaObject(propSchema)) {
-          propType = propSchema.type || 'any';
+          // 处理数组类型
+          if (propSchema.type === 'array' && propSchema.items) {
+            if ('$ref' in propSchema.items) {
+              // 引用类型数组：User[] 
+              const refName = propSchema.items.$ref.split('/').pop();
+              propType = `${refName}[]`;
+            } else if ('type' in propSchema.items) {
+              // 基础类型数组：string[], number[]
+              propType = `${propSchema.items.type}[]`;
+            } else {
+              propType = 'any[]';
+            }
+          } else {
+            propType = propSchema.type || 'any';
+          }
           propDescription = propSchema.description;
           
           // 提取验证属性
@@ -150,7 +164,7 @@ export class RefParsingStrategy implements ParsingStrategy {
     return !!(data && typeof data === 'object' && '$ref' in data);
   }
 
-  parse(refData: { schema: ReferenceObject; fallbackName?: string }): ParsedType {
+  parse(refData: { schema: ReferenceObject; fallbackName?: string }): TypeDefinition {
     const { schema, fallbackName } = refData;
     const refName = this.extractRefName(schema.$ref);
     
@@ -186,16 +200,29 @@ export class RequestTypeParsingStrategy implements ParsingStrategy {
            'requestBody' in data.operation);
   }
 
-  parse(requestData: { operation: OperationWithPath; typeName: string }): ParsedType {
+  parse(requestData: { operation: OperationWithPath; typeName: string }): TypeDefinition {
     const { operation, typeName } = requestData;
     
-    if (!operation.requestBody || !isRequestBodyObject(operation.requestBody)) {
-      return this.generateEmptyType(typeName);
+    if (!operation.requestBody) {
+      throw new Error(
+        `Missing requestBody for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+        `Please define requestBody in your OpenAPI specification.`
+      );
+    }
+
+    if (!isRequestBodyObject(operation.requestBody)) {
+      throw new Error(
+        `RequestBody $ref not supported for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+        `Please inline the requestBody definition.`
+      );
     }
 
     const mediaType = operation.requestBody.content['application/json'];
     if (!mediaType || !mediaType.schema) {
-      return this.generateEmptyType(typeName);
+      throw new Error(
+        `Missing application/json schema in requestBody for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+        `Please define the schema for your request body.`
+      );
     }
 
     const schema = mediaType.schema;
@@ -207,19 +234,25 @@ export class RequestTypeParsingStrategy implements ParsingStrategy {
 
     // 使用schema策略处理内联schema
     if (this.schemaStrategy.canHandle(schema)) {
-      return this.schemaStrategy.parse({ name: typeName, schema: schema as SchemaObject });
+      const result = this.schemaStrategy.parse({ name: typeName, schema: schema as SchemaObject });
+      
+      // 检查生成的类型是否为空
+      if (Object.keys(result.properties).length === 0) {
+        throw new Error(
+          `Empty object schema in requestBody for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+          `Please define specific properties for your request body schema.`
+        );
+      }
+      
+      return result;
     }
 
-    return this.generateEmptyType(typeName);
+    throw new Error(
+      `Unsupported schema type in requestBody for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+      `Please use a valid OpenAPI schema.`
+    );
   }
 
-  private generateEmptyType(name: string): ParsedType {
-    return {
-      name,
-      description: undefined,
-      properties: {}
-    };
-  }
 }
 
 /**
@@ -240,22 +273,31 @@ export class ResponseTypeParsingStrategy implements ParsingStrategy {
            'responses' in data.operation);
   }
 
-  parse(responseData: { operation: OperationWithPath; typeName: string }): ParsedType {
+  parse(responseData: { operation: OperationWithPath; typeName: string }): TypeDefinition {
     const { operation, typeName } = responseData;
     
     const response200 = operation.responses['200'];
     if (!response200) {
-      return this.generateEmptyType(typeName);
+      throw new Error(
+        `Missing 200 response for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+        `Please define a 200 response in your OpenAPI specification.`
+      );
     }
 
     // 检查是否为引用对象
     if (isReferenceObject(response200)) {
-      return this.generateEmptyType(typeName);
+      throw new Error(
+        `Response $ref not supported for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+        `Please inline the response definition.`
+      );
     }
 
     const mediaType = response200.content?.['application/json'];
     if (!mediaType || !mediaType.schema) {
-      return this.generateEmptyType(typeName);
+      throw new Error(
+        `Missing application/json schema in 200 response for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+        `Please define the schema for your response body.`
+      );
     }
 
     const schema = mediaType.schema;
@@ -267,19 +309,25 @@ export class ResponseTypeParsingStrategy implements ParsingStrategy {
 
     // 使用schema策略处理内联schema
     if (this.schemaStrategy.canHandle(schema)) {
-      return this.schemaStrategy.parse({ name: typeName, schema: schema as SchemaObject });
+      const result = this.schemaStrategy.parse({ name: typeName, schema: schema as SchemaObject });
+      
+      // 检查生成的类型是否为空
+      if (Object.keys(result.properties).length === 0) {
+        throw new Error(
+          `Empty object schema in 200 response for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+          `Please define specific properties for your response body schema.`
+        );
+      }
+      
+      return result;
     }
 
-    return this.generateEmptyType(typeName);
+    throw new Error(
+      `Unsupported schema type in 200 response for operation "${operation.operationId}" at ${operation.method.toUpperCase()} ${operation.path}. ` +
+      `Please use a valid OpenAPI schema.`
+    );
   }
 
-  private generateEmptyType(name: string): ParsedType {
-    return {
-      name,
-      description: undefined,
-      properties: {}
-    };
-  }
 }
 
 /**
@@ -297,7 +345,7 @@ export class OperationParsingStrategy implements ParsingStrategy {
            typeof data.operationId === 'string');
   }
 
-  parse(operation: OperationWithPath): ParsedOperation {
+  parse(operation: OperationWithPath): APIOperation {
     return {
       name: operation.operationId!,
       method: operation.method.toLowerCase(),
@@ -310,7 +358,7 @@ export class OperationParsingStrategy implements ParsingStrategy {
     };
   }
 
-  private parseParameters(parameters?: (ParameterObject | ReferenceObject)[]): ParsedParameter[] {
+  private parseParameters(parameters?: (ParameterObject | ReferenceObject)[]): Parameter[] {
     if (!parameters) return [];
     
     return parameters

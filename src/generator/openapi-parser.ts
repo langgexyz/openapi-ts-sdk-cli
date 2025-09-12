@@ -4,23 +4,20 @@
 
 import { ParsingStrategyManager } from './parsing-strategies';
 import { OpenAPIV3 } from 'openapi-types';
-import { pascalCase, camelCase } from 'change-case';
+import { pascalCase } from 'change-case';
 
 // 使用标准的 OpenAPI 类型定义
 export type OpenAPISpec = OpenAPIV3.Document;
 export type SchemaObject = OpenAPIV3.SchemaObject;
 export type OperationSpec = OpenAPIV3.OperationObject;
-export type RequestBodyObject = OpenAPIV3.RequestBodyObject;
-export type ResponseObject = OpenAPIV3.ResponseObject;
-export type ParameterObject = OpenAPIV3.ParameterObject;
 
-export interface ParsedAPI {
+export interface APIGroup {
   className: string;
-  operations: ParsedOperation[];
-  types: ParsedType[];
+  operations: APIOperation[];
+  types: TypeDefinition[];
 }
 
-export interface ParsedOperation {
+export interface APIOperation {
   name: string;
   method: string;
   path: string;
@@ -28,17 +25,17 @@ export interface ParsedOperation {
   description?: string;
   requestType?: string;
   responseType?: string;
-  parameters?: ParsedParameter[];
+  parameters?: Parameter[];
 }
 
-export interface ParsedParameter {
+export interface Parameter {
   name: string;
   type: string;
   required: boolean;
   in: 'query' | 'path' | 'header' | 'body' | 'cookie';
 }
 
-export interface ParsedType {
+export interface TypeDefinition {
   name: string;
   description?: string;
   properties: Record<string, TypeProperty>;
@@ -62,6 +59,14 @@ export interface TypeProperty {
   uniqueItems?: boolean;
 }
 
+/**
+ * 路径结构分析结果接口
+ */
+interface PathAnalysis {
+  paramCount: number;
+  versionPrefix: string | null;
+}
+
 export class OpenAPIParser {
   private strategyManager: ParsingStrategyManager;
 
@@ -69,14 +74,14 @@ export class OpenAPIParser {
     this.strategyManager = new ParsingStrategyManager();
   }
 
-  parse(spec: OpenAPISpec): ParsedAPI[] {
-    const apis: ParsedAPI[] = [];
-    const allTypes: Map<string, ParsedType> = new Map();
+  parse(spec: OpenAPISpec): APIGroup[] {
+    const apis: APIGroup[] = [];
+    const allTypes: Map<string, TypeDefinition> = new Map();
 
     // 解析 schemas 生成类型 - 使用策略模式
     if (spec.components?.schemas) {
       for (const [name, schema] of Object.entries(spec.components.schemas)) {
-        const parsedType = this.strategyManager.parseByStrategy('schema-parsing', { name, schema }) as ParsedType;
+        const parsedType = this.strategyManager.parseByStrategy('schema-parsing', { name, schema }) as TypeDefinition;
         allTypes.set(parsedType.name, parsedType);
       }
     }
@@ -85,23 +90,23 @@ export class OpenAPIParser {
     const tagGroups = this.groupByTags(spec.paths);
 
     for (const [tag, operations] of Object.entries(tagGroups)) {
-      const className = this.toClassName(tag);
-      const parsedOperations: ParsedOperation[] = [];
+      const className = this.toPascalCase(tag);
+      const parsedOperations: APIOperation[] = [];
 
       for (const op of operations) {
         // 使用策略模式解析操作
-        const parsedOp = this.strategyManager.parseByStrategy('operation-parsing', op) as ParsedOperation;
+        const parsedOp = this.strategyManager.parseByStrategy('operation-parsing', op) as APIOperation;
         parsedOperations.push(parsedOp);
         
         // 生成请求/响应类型（去重） - 使用策略模式
         if (op.requestBody) {
-          const typeName = `${this.simplifyOperationName(op.operationId)}Request`;
-          const requestType = this.strategyManager.parseByStrategy('request-type-parsing', { operation: op, typeName }) as ParsedType;
+          const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Request`;
+          const requestType = this.strategyManager.parseByStrategy('request-type-parsing', { operation: op, typeName }) as TypeDefinition;
           allTypes.set(requestType.name, requestType);
         }
         if (op.responses) {
-          const typeName = `${this.simplifyOperationName(op.operationId)}Response`;
-          const responseType = this.strategyManager.parseByStrategy('response-type-parsing', { operation: op, typeName }) as ParsedType;
+          const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Response`;
+          const responseType = this.strategyManager.parseByStrategy('response-type-parsing', { operation: op, typeName }) as TypeDefinition;
           allTypes.set(responseType.name, responseType);
         }
       }
@@ -206,54 +211,42 @@ export class OpenAPIParser {
   }
   
   /**
-   * 从路径和HTTP方法推断方法名（通用规则）
+   * 从路径和HTTP方法推断方法名（增强版 - 支持复杂嵌套路径）
    */
   private extractMethodFromPath(path: string, method: string): string {
     const httpMethod = method.toLowerCase();
     
-    // 解析路径，提取最后的资源名称
+    // 解析路径，提取关键信息
     const pathSegments = path.split('/').filter(Boolean);
     const lastSegment = pathSegments[pathSegments.length - 1];
     
-    // 如果最后一段是参数（包含{}），则取倒数第二段
-    const resourceName = lastSegment?.includes('{') 
-      ? pathSegments[pathSegments.length - 2] 
-      : lastSegment;
+    // 分析路径结构，识别操作意图
+    const pathAnalysis = this.analyzePathStructure(pathSegments);
     
     // 基于HTTP方法和路径结构生成方法名
     let methodName = '';
     
     switch (httpMethod) {
       case 'get':
-        if (path.includes('/{')) {
-          // GET /users/{id} -> getById
-          methodName = 'getById';
-        } else if (resourceName && resourceName !== pathSegments[1]) {
-          // GET /users/active -> getActive  
-          // GET /orders/stats -> getStats
-          methodName = 'get' + this.toPascalCase(resourceName);
-        } else {
-          // GET /users -> getList
-          methodName = 'getList';
-        }
+        methodName = this.generateGetMethodName(pathAnalysis, pathSegments);
         break;
       case 'post':
-        methodName = 'create';
+        methodName = this.generatePostMethodName(pathAnalysis, pathSegments);
         break;
       case 'put':
-        if (resourceName && resourceName !== pathSegments[1]) {
-          // PUT /users/{id}/status -> updateStatus
-          methodName = 'update' + this.toPascalCase(resourceName);
-        } else {
-          // PUT /users/{id} -> update
-          methodName = 'update';
-        }
+        methodName = this.generatePutMethodName(pathAnalysis, pathSegments);
         break;
       case 'patch':
-        methodName = 'patch';
+        methodName = this.generatePatchMethodName(pathAnalysis, pathSegments);
         break;
       case 'delete':
-        methodName = 'delete';
+        methodName = this.generateDeleteMethodName(pathAnalysis, pathSegments);
+        break;
+      case 'head':
+        methodName = pathAnalysis.versionPrefix ? `head${pathAnalysis.versionPrefix}` : 'head';
+        break;
+      case 'options':
+        methodName = pathAnalysis.versionPrefix ? `options${pathAnalysis.versionPrefix}` : 'options';
         break;
       default:
         methodName = httpMethod;
@@ -263,95 +256,241 @@ export class OpenAPIParser {
   }
   
   /**
+   * 分析路径结构，提取参数数量和版本信息
+   */
+  private analyzePathStructure(pathSegments: string[]): PathAnalysis {
+    const params = pathSegments.filter(seg => seg.includes('{'));
+    
+    // 识别版本信息 (v1, v2, v3等)
+    const versionSegment = pathSegments.find(seg => /^v\d+$/i.test(seg));
+    const versionPrefix = versionSegment ? versionSegment.toUpperCase() : null;
+    
+    return {
+      paramCount: params.length,
+      versionPrefix
+    };
+  }
+  
+  /**
+   * 生成GET方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generateGetMethodName(analysis: PathAnalysis, pathSegments: string[]): string {
+    const { paramCount, versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      const baseMethodName = paramCount > 0 ? 'getById' : 'getList';
+      return versionPrefix ? `get${versionPrefix}${baseMethodName.slice(3)}` : baseMethodName;
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    
+    // 构建基础方法名
+    let baseMethodName: string;
+    if (paramCount > 0) {
+      baseMethodName = `get${resourcePath}ById`;
+    } else {
+      baseMethodName = `get${resourcePath}`;
+    }
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `get${versionPrefix}${baseMethodName.slice(3)}` : baseMethodName;
+  }
+  
+  /**
+   * 生成POST方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generatePostMethodName(analysis: PathAnalysis, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `create${versionPrefix}` : 'create';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `create${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `create${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
+  }
+  
+  /**
+   * 生成PUT方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generatePutMethodName(analysis: PathAnalysis, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `update${versionPrefix}` : 'update';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `update${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `update${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
+  }
+  
+  /**
+   * 生成PATCH方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generatePatchMethodName(analysis: PathAnalysis, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `patch${versionPrefix}` : 'patch';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `patch${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `patch${versionPrefix}${baseMethodName.slice(5)}` : baseMethodName;
+  }
+  
+  /**
+   * 生成DELETE方法名 - 基于URI结构，便于识别对应路径，包含版本信息
+   */
+  private generateDeleteMethodName(analysis: PathAnalysis, pathSegments: string[]): string {
+    const { versionPrefix } = analysis;
+    
+    // 过滤掉常见的API前缀，但保留版本信息，获取实际的业务资源路径
+    const businessSegments = pathSegments.filter(seg => 
+      !seg.includes('{') && 
+      !['api'].includes(seg.toLowerCase()) &&
+      !/^v\d+$/i.test(seg)  // 版本信息单独处理
+    );
+    
+    if (businessSegments.length === 0) {
+      return versionPrefix ? `delete${versionPrefix}` : 'delete';
+    }
+    
+    // 构建资源路径
+    const resourcePath = businessSegments.map(seg => this.toPascalCase(seg)).join('');
+    const baseMethodName = `delete${resourcePath}`;
+    
+    // 如果有版本信息，在方法名中体现
+    return versionPrefix ? `delete${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
+  }
+  
+  /**
    * 转换为PascalCase命名 - 直接使用change-case库
    */
   private toPascalCase(str: string): string {
     return pascalCase(str);
   }
 
-  private parseOperation(op: OperationWithPath): ParsedOperation {
-    return {
-      name: op.operationId || this.generateOperationName(op.path, op.method),
-      method: op.method.toUpperCase(),
-      path: op.path,
-      summary: op.summary,
-      description: op.description,
-      requestType: op.requestBody ? `${this.simplifyOperationName(op.operationId)}Request` : undefined,
-      responseType: op.responses['200'] ? `${this.simplifyOperationName(op.operationId)}Response` : undefined,
-      parameters: op.parameters
-        ?.filter((p): p is ParameterObject => 'name' in p && 'in' in p)
-        .map((p) => ({
-          name: p.name,
-          type: (p.schema && 'type' in p.schema) ? p.schema.type || 'string' : 'string',
-          required: p.required || false,
-          in: (p.in === 'cookie' ? 'header' : p.in) as 'query' | 'path' | 'header' | 'body' | 'cookie'
-        })) || []
-    };
-  }
 
-  private parseSchema(name: string, schema: SchemaObject): ParsedType {
+  private parseSchema(name: string, schema: SchemaObject): TypeDefinition {
     const properties: Record<string, TypeProperty> = {};
     
     if (schema.properties) {
       for (const [propName, propSchema] of Object.entries(schema.properties)) {
-        // Type assertion for OpenAPI schema properties
-        const prop = propSchema as any;
+        // 明确类型化属性模式
+        const prop = propSchema as SchemaObject;
         
         properties[propName] = {
-          type: prop.type || 'any', // 保持原始类型，不进行转换
+          type: prop.type || 'string', // 默认为string而不是any
           required: schema.required?.includes(propName) || false,
           description: prop.description,
-          // Extract OpenAPI validation properties
-          format: prop.format as string,
-          pattern: prop.pattern as string,
-          minimum: prop.minimum as number,
-          maximum: prop.maximum as number,
-          exclusiveMinimum: prop.exclusiveMinimum as number,
-          exclusiveMaximum: prop.exclusiveMaximum as number,
-          minLength: prop.minLength as number,
-          maxLength: prop.maxLength as number,
-          minItems: prop.minItems as number,
-          maxItems: prop.maxItems as number,
-          uniqueItems: prop.uniqueItems as boolean
+          // OpenAPI 验证属性
+          format: prop.format,
+          pattern: prop.pattern,
+          minimum: prop.minimum,
+          maximum: prop.maximum,
+          exclusiveMinimum: typeof prop.exclusiveMinimum === 'number' ? prop.exclusiveMinimum : undefined,
+          exclusiveMaximum: typeof prop.exclusiveMaximum === 'number' ? prop.exclusiveMaximum : undefined,
+          minLength: prop.minLength,
+          maxLength: prop.maxLength,
+          minItems: prop.minItems,
+          maxItems: prop.maxItems,
+          uniqueItems: prop.uniqueItems
         };
       }
     }
 
     return { 
-      name: this.toClassName(name), 
+      name: this.toPascalCase(name), 
       description: schema.description,
       properties 
     };
   }
 
-  private parseRequestType(op: OperationWithPath): ParsedType {
+  private parseRequestType(op: OperationWithPath): TypeDefinition {
     // 解析请求体类型
     const requestBody = op.requestBody;
-    if (!requestBody || '$ref' in requestBody) {
-      return this.generateDefaultRequestType(op, op.operationId + 'Request');
+    if (!requestBody) {
+      throw new Error(
+        `Missing requestBody for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please define requestBody in your OpenAPI specification.`
+      );
+    }
+    
+    if ('$ref' in requestBody) {
+      throw new Error(
+        `RequestBody $ref not supported for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please inline the requestBody definition.`
+      );
     }
     
     let schema = requestBody.content?.['application/json']?.schema;
-    const typeName = `${this.simplifyOperationName(op.operationId)}Request`;
-    
-    if (schema) {
-      // 处理 $ref 引用
-      if ('$ref' in schema) {
-        const refName = this.extractRefName(schema.$ref);
-        return { name: this.toClassName(refName), description: undefined, properties: {} };
-      }
-      
-      const parsedType = this.parseSchema(typeName, schema as SchemaObject);
-      
-      // 如果 schema 只是空的 object，尝试推断一些通用字段
-      if (Object.keys(parsedType.properties).length === 0 && (schema as SchemaObject).type === 'object') {
-        return this.generateDefaultRequestType(op, typeName);
-      }
-      
-      return parsedType;
+    if (!schema) {
+      throw new Error(
+        `Missing application/json schema in requestBody for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please define the schema for your request body.`
+      );
     }
     
-    return this.generateDefaultRequestType(op, typeName);
+    const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Request`;
+    
+    // 处理 $ref 引用
+    if ('$ref' in schema) {
+      const refName = this.extractRefName(schema.$ref);
+      return { name: this.toPascalCase(refName), description: undefined, properties: {} };
+    }
+    
+    const parsedType = this.parseSchema(typeName, schema as SchemaObject);
+    
+    // 如果 schema 是空的 object，要求开发者完善规范
+    if (Object.keys(parsedType.properties).length === 0 && (schema as SchemaObject).type === 'object') {
+      throw new Error(
+        `Empty object schema in requestBody for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please define specific properties for your request body schema.`
+      );
+    }
+    
+    return parsedType;
   }
 
   /**
@@ -363,149 +502,79 @@ export class OpenAPIParser {
     return parts[parts.length - 1];
   }
 
-  private parseResponseType(op: OperationWithPath): ParsedType {
+  private parseResponseType(op: OperationWithPath): TypeDefinition {
     // 解析响应类型
     const response200 = op.responses['200'];
-    if (!response200 || '$ref' in response200) {
-      return this.generateDefaultResponseType(op, op.operationId + 'Response');
+    if (!response200) {
+      throw new Error(
+        `Missing 200 response for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please define a 200 response in your OpenAPI specification.`
+      );
+    }
+    
+    if ('$ref' in response200) {
+      throw new Error(
+        `Response $ref not supported for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please inline the response definition.`
+      );
     }
     
     let schema = response200.content?.['application/json']?.schema;
-    const typeName = `${this.simplifyOperationName(op.operationId)}Response`;
-    
-    if (schema) {
-      // 处理 $ref 引用
-      if ('$ref' in schema) {
-        const refName = this.extractRefName(schema.$ref);
-        return { name: this.toClassName(refName), description: undefined, properties: {} };
-      }
-      
-      const parsedType = this.parseSchema(typeName, schema as SchemaObject);
-      
-      // 如果 schema 只是空的 object，生成默认的响应类型
-      if (Object.keys(parsedType.properties).length === 0 && (schema as SchemaObject).type === 'object') {
-        return this.generateDefaultResponseType(op, typeName);
-      }
-      
-      return parsedType;
+    if (!schema) {
+      throw new Error(
+        `Missing application/json schema in 200 response for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please define the schema for your response body.`
+      );
     }
     
-    return this.generateDefaultResponseType(op, typeName);
+    const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Response`;
+    
+    // 处理 $ref 引用
+    if ('$ref' in schema) {
+      const refName = this.extractRefName(schema.$ref);
+      return { name: this.toPascalCase(refName), description: undefined, properties: {} };
+    }
+    
+    const parsedType = this.parseSchema(typeName, schema as SchemaObject);
+    
+    // 如果 schema 是空的 object，要求开发者完善规范
+    if (Object.keys(parsedType.properties).length === 0 && (schema as SchemaObject).type === 'object') {
+      throw new Error(
+        `Empty object schema in 200 response for operation "${op.operationId}" at ${op.method.toUpperCase()} ${op.path}. ` +
+        `Please define specific properties for your response body schema.`
+      );
+    }
+    
+    return parsedType;
   }
 
   /**
-   * 简化操作名，移除冗余的 Controller 前缀并转换为正确的驼峰格式
+   * 从 operationId 提取纯净的类型名称
+   * 移除 Controller/Api 等前缀，转换为 PascalCase 用于生成类型名
    */
-  private simplifyOperationName(operationId?: string): string {
-    if (!operationId) return 'Unknown';
+  private extractTypeNameFromOperationId(operationId?: string): string {
+    if (!operationId) {
+      throw new Error('operationId is required for generating type names');
+    }
     
-    // 移除 Controller 前缀，只保留操作名
-    let simplified = operationId
+    // 移除各种技术前缀，只保留核心操作名
+    let cleanName = operationId
       .replace(/^.*Controller_?/i, '') // 移除 XxxController_ 前缀
       .replace(/^.*controller_?/i, '') // 移除 xxxcontroller_ 前缀
       .replace(/^.*Api_?/i, '')        // 移除 XxxApi_ 前缀
       .replace(/^.*api_?/i, '');       // 移除 xxxapi_ 前缀
     
-    // 转换为正确的驼峰格式
-    return this.toPascalCase(simplified);
-  }
-
-  private generateDefaultRequestType(op: OperationWithPath, typeName: string): ParsedType {
-    // 根据操作生成默认的请求类型
-    const properties: Record<string, TypeProperty> = {};
-    
-    // 从路径中提取可能的参数
-    const pathParams = op.path?.match(/\{([^}]+)\}/g)?.map((param: string) => param.slice(1, -1)) || [];
-    
-    pathParams.forEach((param: string) => {
-      properties[param] = {
-        type: 'string',
-        required: true,
-        description: `路径参数: ${param}`
-      };
-    });
-    
-    // 根据操作名称推断常见参数
-    const operationName = op.operationId?.toLowerCase() || '';
-    
-    if (operationName.includes('query') || operationName.includes('search')) {
-      if (!properties['pageSize']) {
-        properties['pageSize'] = { type: 'number', required: true, description: '页面大小' };
-      }
-      if (!properties['pageNum']) {
-        properties['pageNum'] = { type: 'number', required: true, description: '页码' };
-      }
+    // 如果移除前缀后为空，说明 operationId 格式有问题
+    if (!cleanName.trim()) {
+      throw new Error(`Invalid operationId format: "${operationId}". Expected format: "controllerName_methodName"`);
     }
     
-    if (operationName.includes('token') || operationName.includes('ca')) {
-      if (!properties['caAddress']) {
-        properties['caAddress'] = { type: 'string', required: false, description: '代币合约地址' };
-      }
-    }
-    
-    if (operationName.includes('wallet') || operationName.includes('address')) {
-      if (!properties['walletAddress']) {
-        properties['walletAddress'] = { type: 'string', required: false, description: '钱包地址' };
-      }
-    }
-    
-    if (operationName.includes('user') || operationName.includes('uid')) {
-      if (!properties['userId']) {
-        properties['userId'] = { type: 'string', required: false, description: '用户ID' };
-      }
-    }
-    
-    // 如果仍然没有属性，添加一个通用的 data 字段
-    if (Object.keys(properties).length === 0) {
-      properties['data'] = {
-        type: 'Record<string, any>',  // 使用 any 确保类型明确
-        required: true,                    // ✅ 设为必填
-        description: '请求数据'
-      };
-    }
-    
-    return { name: typeName, properties };
+    // 转换为 PascalCase 用于类型名
+    return this.toPascalCase(cleanName);
   }
 
-  private generateDefaultResponseType(op: OperationWithPath, typeName: string): ParsedType {
-    // 生成默认的响应类型结构
-    const properties: Record<string, TypeProperty> = {
-      code: {
-        type: 'number',
-        required: true,  // ✅ 改为必填
-        description: '响应状态码'
-      },
-      message: {
-        type: 'string',
-        required: true,  // ✅ 改为必填
-        description: '响应消息'
-      },
-      data: {
-        type: 'unknown',  // ✅ 使用 unknown 替代 any
-        required: false,
-        description: '响应数据'
-      },
-      success: {
-        type: 'boolean',
-        required: true,  // ✅ 改为必填
-        description: '请求是否成功'
-      }
-    };
-    
-    return { name: typeName, properties };
-  }
 
-  private toClassName(str: string): string {
-    return str.replace(/^./, char => char.toUpperCase())
-              .replace(/[^a-zA-Z0-9]/g, '');
-  }
 
-  private generateOperationName(path: string, method: string): string {
-    const segments = path.split('/').filter(s => s && !s.startsWith('{'));
-    return method.toLowerCase() + segments.map(s => this.toClassName(s)).join('');
-  }
-
-// mapType方法已移除 - 策略模式不需要类型转换，直接保持原始TypeScript类型
 }
 
 // 辅助类型
