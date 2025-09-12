@@ -185,15 +185,24 @@ export abstract class APIClient {
   }
 
   /**
-   * 通用请求处理方法
+   * 通用请求处理方法 - 参考PostJsonNoToken设计，但保持异常抛出模式
    * @protected
    */
   protected async executeRequest<TRequest = unknown, TResponse = unknown>(
     method: HttpMethod,
     path: string,
-    request?: TRequest,
+    request: TRequest,
+    responseType: {new(...args:any[]): TResponse} | TResponse,
     options: APIOption[] = []
   ): Promise<TResponse> {
+    // 处理响应类型：如果是构造函数则创建实例
+    let resTypeInstance: TResponse;
+    if (typeof responseType === "function") {
+      resTypeInstance = new responseType();
+    } else {
+      resTypeInstance = responseType;
+    }
+    
     // 创建默认配置
     const config: APIConfig = {
       uri: path,
@@ -215,9 +224,10 @@ export abstract class APIClient {
       httpBuilder.addHeader(key, value);
     });
     
-    // 添加请求体（如果有）
+    // 序列化请求体（如果有）
     if (request) {
-      httpBuilder.setContent(new Json().toJson(request));
+      const requestJson = new Json().toJson(request);
+      httpBuilder.setContent(requestJson);
     }
     
     const http = httpBuilder.build();
@@ -227,12 +237,16 @@ export abstract class APIClient {
       throw error;
     }
     
-    // 使用ts-json进行反序列化，支持复杂类型
-    try {
-      return JSON.parse(response); // 对于通用的executeRequest保持兼容性
-    } catch {
-      return response as TResponse;
+    if (response === "") {
+      throw new Error("response is empty");
     }
+    
+    // 使用ts-json进行反序列化
+    const [result, parseError] = new Json().fromJson(response, resTypeInstance);
+    if (parseError) {
+      throw parseError;
+    }
+    return result as TResponse;
   }
 }
 `;
@@ -579,6 +593,7 @@ ${validationCall}
         HttpMethod.${operation.method.toUpperCase()},
         ${pathExpression},
         ${requestArg},
+        ${finalResponseType},
         options
       );
     }`;
