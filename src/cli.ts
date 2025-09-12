@@ -226,7 +226,7 @@ program
           prepublishOnly: 'npm run clean && npm run build'
         },
         dependencies: {
-          [packageName]: 'file:../../openapi-ts-sdk',
+          [packageName]: 'https://github.com/langgexyz/openapi-ts-sdk.git#semver:^1.0.0',
           'class-transformer': '^0.5.1',
           'class-validator': '^0.14.0',
           'reflect-metadata': '^0.1.13'
