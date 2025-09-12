@@ -131,10 +131,12 @@ ${validationCode}
         // 检查是否是数组类型（响应类型名包含Array或以[]结尾）
         const isArrayResponse = '${operation.responseType}'.includes('Array') || '${operation.responseType}'.endsWith('[]');
         if (isArrayResponse) {
+          // 对于数组类型，直接使用ClassArray作为prototype
           const [result, error] = new Json().fromJson(response, new ClassArray(ResponseClass));
           if (error) throw error;
           return result;
         } else {
+          // 对于普通类型，使用类的实例作为prototype  
           const [result, error] = new Json().fromJson(response, new ResponseClass());
           if (error) throw error;
           return result;
