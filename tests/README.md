@@ -79,11 +79,18 @@ tests/
 #### **fixtures/openapi-specs/**
 存放各种 OpenAPI 规范测试用例：
 
-- **multi-path-params.json**: 多路径参数测试用例
-  - 测试复杂的嵌套路径：`/api/orders/{orderId}/items/{itemId}`
-  - 测试三层嵌套路径：`/api/users/{userId}/posts/{postId}/comments/{commentId}`
-  - 验证方法名生成：`getOrdersItemsById`、`deleteUsersPostsCommentsById`
-  - 适用于验证复杂路径解析和参数处理
+- **multi-path-params.json**: 完整的多路径参数测试用例
+  - 📋 **基础功能**: 双层路径参数 `/api/orders/{orderId}/items/{itemId}`
+  - 🔗 **三层嵌套**: `/api/users/{userId}/posts/{postId}/comments/{commentId}`
+  - 🏢 **五层嵌套**: `/api/v1/organizations/{orgId}/departments/{deptId}/teams/{teamId}/members/{memberId}`
+  - 📁 **复杂业务**: `/api/v2/projects/{projectId}/milestones/{milestoneId}/tasks/{taskId}/attachments/{attachmentId}`
+  - ✅ **验证功能**:
+    - 版本前缀处理 (v1, v2)
+    - 复杂方法名生成 (`getV1OrganizationsDepartmentsTeamsMembersById`)
+    - 多种HTTP方法 (GET, POST, PUT, PATCH, DELETE)
+    - 查询参数和Header参数处理
+    - 完整的Schema验证规则 (pattern, enum, min/max)
+    - 各种数据类型验证 (string, number, array, object)
 
 ### 🎯 后续计划
 

@@ -1,32 +1,82 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Multi Path Parameters Test",
-    "version": "1.0.0"
+    "title": "Multi Path Parameters Test API",
+    "version": "1.0.0",
+    "description": "测试多路径参数和复杂嵌套路径的 OpenAPI 规范",
+    "contact": {
+      "name": "API Support",
+      "email": "support@example.com"
+    }
   },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "开发环境"
+    }
+  ],
+  "tags": [
+    {
+      "name": "orders",
+      "description": "订单管理相关接口"
+    },
+    {
+      "name": "users",
+      "description": "用户管理相关接口"
+    },
+    {
+      "name": "organizations",
+      "description": "组织管理相关接口"
+    },
+    {
+      "name": "projects",
+      "description": "项目管理相关接口"
+    }
+  ],
   "paths": {
     "/api/orders/{orderId}/items/{itemId}": {
       "get": {
+        "tags": ["orders"],
         "operationId": "ordercontroller_getorderitem",
         "summary": "获取订单项详情",
+        "description": "根据订单ID和订单项ID获取特定订单项的详细信息",
         "parameters": [
           {
             "name": "orderId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
             },
-            "description": "订单ID"
+            "description": "订单ID (UUID格式)"
           },
           {
             "name": "itemId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^ITM[0-9]{6}$",
+              "example": "ITM123456"
             },
-            "description": "订单项ID"
+            "description": "订单项ID (ITM+6位数字)"
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["product", "pricing", "inventory"]
+              }
+            },
+            "description": "需要包含的额外信息",
+            "style": "form",
+            "explode": false
           }
         ],
         "responses": {
@@ -37,17 +87,24 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "item": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
                       "type": "object",
                       "properties": {
-                        "id": { "type": "string" },
-                        "orderId": { "type": "string" },
-                        "quantity": { "type": "number" },
-                        "price": { "type": "number" },
-                        "productName": { "type": "string" }
-                      }
+                        "id": { "type": "string", "example": "ITM123456" },
+                        "orderId": { "type": "string", "example": "550e8400-e29b-41d4-a716-446655440000" },
+                        "quantity": { "type": "number", "minimum": 1, "example": 2 },
+                        "price": { "type": "number", "minimum": 0, "example": 99.99 },
+                        "productName": { "type": "string", "minLength": 1, "maxLength": 200, "example": "iPhone 15 Pro Max" },
+                        "productId": { "type": "string", "example": "PROD123" },
+                        "status": { "type": "string", "enum": ["pending", "confirmed", "shipped", "delivered"], "example": "confirmed" },
+                        "createdAt": { "type": "string", "format": "date-time", "example": "2023-12-01T10:30:00Z" },
+                        "updatedAt": { "type": "string", "format": "date-time", "example": "2023-12-01T10:30:00Z" }
+                      },
+                      "required": ["id", "orderId", "quantity", "price", "productName", "status"]
                     }
-                  }
+                  },
+                  "required": ["success", "data"]
                 }
               }
             }
@@ -55,8 +112,10 @@
         }
       },
       "put": {
+        "tags": ["orders"],
         "operationId": "ordercontroller_updateorderitem",
         "summary": "更新订单项",
+        "description": "更新指定订单中特定订单项的数量和价格信息",
         "parameters": [
           {
             "name": "orderId",
@@ -79,6 +138,7 @@
         ],
         "requestBody": {
           "required": true,
+          "description": "订单项更新信息",
           "content": {
             "application/json": {
               "schema": {
@@ -86,11 +146,23 @@
                 "properties": {
                   "quantity": {
                     "type": "number",
-                    "description": "商品数量"
+                    "minimum": 1,
+                    "maximum": 999,
+                    "description": "商品数量",
+                    "example": 3
                   },
                   "price": {
                     "type": "number",
-                    "description": "商品价格"
+                    "minimum": 0,
+                    "multipleOf": 0.01,
+                    "description": "商品价格（精确到分）",
+                    "example": 129.99
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "更新备注",
+                    "example": "客户要求增加数量"
                   }
                 },
                 "required": ["quantity", "price"]
@@ -126,8 +198,10 @@
     },
     "/api/users/{userId}/posts/{postId}/comments/{commentId}": {
       "delete": {
+        "tags": ["users"],
         "operationId": "usercontroller_deletecomment",
         "summary": "删除评论",
+        "description": "删除指定用户在特定帖子下的评论",
         "parameters": [
           {
             "name": "userId",
@@ -155,6 +229,26 @@
               "type": "string"
             },
             "description": "评论ID"
+          },
+          {
+            "name": "X-User-Role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["admin", "moderator", "user"]
+            },
+            "description": "用户角色，用于权限验证"
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["spam", "inappropriate", "violation", "duplicate"]
+            },
+            "description": "删除原因"
           }
         ],
         "responses": {
@@ -168,6 +262,295 @@
                     "success": { "type": "boolean" },
                     "message": { "type": "string" },
                     "deletedCommentId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/departments/{deptId}/teams/{teamId}/members/{memberId}": {
+      "get": {
+        "tags": ["organizations"],
+        "operationId": "organizationcontroller_getteammember",
+        "summary": "获取团队成员信息",
+        "description": "获取指定组织下特定部门团队中的成员详细信息",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^ORG[0-9]{4}$",
+              "example": "ORG1001"
+            },
+            "description": "组织ID"
+          },
+          {
+            "name": "deptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^DEPT[0-9]{3}$",
+              "example": "DEPT001"
+            },
+            "description": "部门ID"
+          },
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^TEAM[0-9]{3}$",
+              "example": "TEAM001"
+            },
+            "description": "团队ID"
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^MEM[0-9]{6}$",
+              "example": "MEM123456"
+            },
+            "description": "成员ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功获取成员信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "email": { "type": "string", "format": "email" },
+                        "position": { "type": "string" },
+                        "department": { "type": "string" },
+                        "team": { "type": "string" },
+                        "organization": { "type": "string" },
+                        "joinDate": { "type": "string", "format": "date" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["organizations"],
+        "operationId": "organizationcontroller_updateteammemberpartial",
+        "summary": "部分更新团队成员信息",
+        "description": "部分更新指定团队成员的信息",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^ORG[0-9]{4}$"
+            },
+            "description": "组织ID"
+          },
+          {
+            "name": "deptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^DEPT[0-9]{3}$"
+            },
+            "description": "部门ID"
+          },
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^TEAM[0-9]{3}$"
+            },
+            "description": "团队ID"
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^MEM[0-9]{6}$"
+            },
+            "description": "成员ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 100,
+                    "description": "职位"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "邮箱地址"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^\\+?[1-9]\\d{1,14}$",
+                    "description": "电话号码"
+                  }
+                },
+                "minProperties": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "updatedFields": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/projects/{projectId}/milestones/{milestoneId}/tasks/{taskId}/attachments/{attachmentId}": {
+      "post": {
+        "tags": ["projects"],
+        "operationId": "projectcontroller_uploadtaskattachment",
+        "summary": "上传任务附件",
+        "description": "为指定项目里程碑下的任务上传新的附件",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^PROJ[0-9]{8}$"
+            },
+            "description": "项目ID"
+          },
+          {
+            "name": "milestoneId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^MS[0-9]{6}$"
+            },
+            "description": "里程碑ID"
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^TASK[0-9]{8}$"
+            },
+            "description": "任务ID"
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^ATT[0-9]{10}$"
+            },
+            "description": "附件ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "文件名称"
+                  },
+                  "fileSize": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 52428800,
+                    "description": "文件大小（字节）"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "description": "附件描述"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": ["document", "image", "video", "other"],
+                    "description": "附件类别"
+                  }
+                },
+                "required": ["fileName", "fileSize", "category"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "上传成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "attachmentId": { "type": "string" },
+                        "filename": { "type": "string" },
+                        "size": { "type": "number" },
+                        "url": { "type": "string", "format": "uri" },
+                        "uploadedAt": { "type": "string", "format": "date-time" }
+                      }
+                    }
                   }
                 }
               }
