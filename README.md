@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](http://www.typescriptlang.org/)
 
-一个强大的命令行工具，能够从 OpenAPI 规范自动生成类型安全的 TypeScript SDK 客户端代码。生成的客户端基于 [ts-sdk-client](../ts-sdk-client) 架构，支持多种 HTTP 实现和 Go 风格的函数式选项模式。
+一个强大的命令行工具，能够从 OpenAPI 规范自动生成类型安全的 TypeScript SDK 客户端代码。生成的客户端基于 [openapi-ts-sdk](../openapi-ts-sdk) 架构，支持多种 HTTP 实现和 Go 风格的函数式选项模式。
 
 ## ✨ 特性
 
@@ -71,7 +71,7 @@ npm run build
 ### 🔧 按需导入单个 Controller
 
 ```typescript
-import { FetchHttpBuilder } from 'ts-sdk-client';
+import { FetchHttpBuilder } from 'openapi-ts-sdk';
 import { UserApi, DataApi } from './generated/index';
 
 // 创建 HTTP Builder
@@ -107,7 +107,7 @@ async function example() {
 ### 🏢 使用统一客户端（向后兼容）
 
 ```typescript
-import { FetchHttpBuilder } from 'ts-sdk-client';
+import { FetchHttpBuilder } from 'openapi-ts-sdk';
 import { UnifiedApiClient } from './generated/index';
 
 const httpBuilder = new FetchHttpBuilder('https://api.example.com');
@@ -196,7 +196,7 @@ await api.getData(
 
 ### 1. 使用 Fetch 实现
 ```typescript
-import { FetchHttpBuilder } from 'ts-sdk-client';
+import { FetchHttpBuilder } from 'openapi-ts-sdk';
 import { UserApi } from './generated';
 
 const httpBuilder = new FetchHttpBuilder('https://api.example.com');
@@ -206,7 +206,7 @@ const userApi = new UserApi(httpBuilder);
 ### 2. 使用 Axios 实现
 ```typescript
 import axios from 'axios';
-import { AxiosHttpBuilder } from 'ts-sdk-client';
+import { AxiosHttpBuilder } from 'openapi-ts-sdk';
 import { UserApi } from './generated';
 
 const axiosInstance = axios.create({ timeout: 10000 });
@@ -217,7 +217,7 @@ const userApi = new UserApi(httpBuilder);
 ### 3. 使用 Gateway SDK 实现
 ```typescript
 import { createClient, HeaderBuilder } from 'gateway-ts-sdk';
-import { GatewayHttpBuilder } from 'ts-sdk-client';
+import { GatewayHttpBuilder } from 'openapi-ts-sdk';
 import { UserApi } from './generated';
 
 const gatewayClient = createClient('ws://localhost:18443', 'my-client');
@@ -232,7 +232,7 @@ const userApi = new UserApi(httpBuilder);
 | `-i, --input <file>` | OpenAPI 规范文件 (JSON) 或 URL | 必需 | `-i ./api.json` 或 `-i https://api.example.com/openapi.json` |
 | `-o, --output <dir>` | 输出目录 | `./generated` | `-o ./src/api` |
 | `-n, --name <name>` | 生成的类名前缀 | 从项目名称推断 | `-n MyAPI` |
-| `-p, --package <package>` | ts-sdk-client 包名 | `ts-sdk-client` | `-p @my/ts-sdk` |
+| `-p, --package <package>` | openapi-ts-sdk 包名 | `openapi-ts-sdk` | `-p @my/openapi-ts-sdk` |
 | `--help` | 显示帮助信息 | - | `--help` |
 | `--version` | 显示版本信息 | - | `--version` |
 
@@ -275,7 +275,7 @@ import { OpenAPIParser, CodeGenerator, generateFromSpec } from 'openapi-ts-sdk-c
 // 方式 1: 使用便捷函数
 const code = await generateFromSpec(openApiSpec, {
   className: 'MyAPI',
-  packageName: 'ts-sdk-client'
+  packageName: 'openapi-ts-sdk'
 });
 
 // 方式 2: 分步使用
@@ -285,7 +285,7 @@ const apis = parser.parse(openApiSpec);
 const generator = new CodeGenerator();
 const files = generator.generate(apis, {
   className: 'MyAPI',
-  packageName: 'ts-sdk-client'
+  packageName: 'openapi-ts-sdk'
 });
 
 // files 是一个 Map<string, string>，键是文件名，值是文件内容
@@ -302,7 +302,7 @@ for (const [filename, content] of files) {
 - `spec`: OpenAPI 规范对象
 - `options`: 生成选项
   - `className`: 生成的类名前缀
-  - `packageName`: ts-sdk-client 包名
+  - `packageName`: openapi-ts-sdk 包名
   - `implementation`: HTTP 实现类型 ('fetch' | 'axios' | 'gateway')
 
 #### `OpenAPIParser`
@@ -395,7 +395,7 @@ npm run build
 
 ## 🔗 相关项目
 
-- [ts-sdk-client](../ts-sdk-client) - TypeScript SDK 客户端库
+- [openapi-ts-sdk](../openapi-ts-sdk) - TypeScript SDK 客户端库
 - [OpenAPI Generator](https://openapi-generator.tech/) - 其他语言的代码生成器
 - [Swagger Codegen](https://swagger.io/tools/swagger-codegen/) - Swagger 官方代码生成器
 
