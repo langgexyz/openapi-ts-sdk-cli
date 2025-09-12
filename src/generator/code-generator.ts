@@ -192,7 +192,9 @@ export abstract class APIClient {
     method: HttpMethod,
     path: string,
     request?: TRequest,
-    options: APIOption[] = []
+    options: APIOption[] = [],
+    responseClass?: new () => TResponse,
+    isArrayResponse?: boolean
   ): Promise<TResponse> {
     // 创建默认配置
     const config: APIConfig = {
@@ -229,7 +231,21 @@ export abstract class APIClient {
     
     // 使用ts-json进行反序列化，支持复杂类型
     try {
-      return JSON.parse(response); // 对于通用的executeRequest保持兼容性
+      if (responseClass) {
+        // 如果提供了响应类型，使用ts-json反序列化
+        if (isArrayResponse) {
+          const [result, error] = new Json().fromJson(response, new ClassArray(responseClass));
+          if (error) throw error;
+          return result as TResponse;
+        } else {
+          const [result, error] = new Json().fromJson(response, new responseClass());
+          if (error) throw error;
+          return result as TResponse;
+        }
+      } else {
+        // 回退到JSON.parse（用于基础类型或无类型情况）
+        return JSON.parse(response);
+      }
     } catch {
       return response as TResponse;
     }
@@ -571,15 +587,25 @@ ${properties}${validateMethod}
     const validationCall = hasRequest && hasComplexRequestType ? 
       `      await request.validate();\n` : '';
 
+    // 检查是否是数组响应类型
+    const isArrayResponse = responseType?.includes('Array') || responseType?.endsWith('[]') || false;
+    const responseClass = responseType && responseType !== 'any' ? responseType : undefined;
+
     return `
     /** ${operation.summary || methodName} */
     async ${methodName}(${pathParamsPrefix}${requestParam}...options: APIOption[]): Promise<${finalResponseType}> {
 ${validationCall}
+      // 检查是否是数组响应类型
+      const isArrayResponse = ${isArrayResponse};
+      const ResponseClass = ${responseClass ? responseClass : 'undefined'};
+      
       return this.executeRequest<${finalRequestType || 'Record<string, never>'}, ${finalResponseType}>(
         HttpMethod.${operation.method.toUpperCase()},
         ${pathExpression},
         ${requestArg},
-        options
+        options,
+        ResponseClass,
+        isArrayResponse
       );
     }`;
   }
