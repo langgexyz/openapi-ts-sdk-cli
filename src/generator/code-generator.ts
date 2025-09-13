@@ -4,7 +4,6 @@
 
 import { pascalCase, camelCase } from 'change-case';
 import { APIGroup, TypeDefinition, APIOperation, TypeProperty } from './openapi-parser';
-// import { TemplateStrategyManager } from './template-strategies'; // 未使用，已注释
 
 export interface GeneratorOptions {
   className?: string;
@@ -13,23 +12,30 @@ export interface GeneratorOptions {
 }
 
 export class CodeGenerator {
-  // private templateManager: TemplateStrategyManager; // 未使用，已注释
-
   constructor() {
-    // this.templateManager = new TemplateStrategyManager(); // 未使用，已注释
+    // 初始化代码生成器
   }
 
   /**
-   * 生成 TypeScript 代码 - 支持多文件生成
+   * 生成 TypeScript SDK 代码
+   *
+   * @param apis - 解析后的 API 组数组
+   * @param options - 生成选项配置
+   * @returns Map<文件名, 文件内容> - 生成的多个 TypeScript 文件
+   *
+   * 生成策略:
+   * 1. 生成 types.ts - 包含共享的基础类型和接口
+   * 2. 按 Controller 分组生成独立的 API 文件
+   * 3. 每个 Controller 文件包含对应的类型定义和 API 方法
    */
   generate(apis: APIGroup[], options: GeneratorOptions): Map<string, string> {
     const files = new Map<string, string>();
-    
-    // 生成共享的基础类型和基类
+
+    // 生成共享的基础类型和基类 (types.ts)
     const typesContent = this.generateSharedApiTypes();
     files.set('types.ts', typesContent);
-    
-    // 按 Controller 分组并生成独立的 API 文件
+
+    // 按 Controller 名称分组，为每个 Controller 生成独立的 API 文件
     const controllerGroups = this.groupByController(apis);
     
     for (const [controllerName, controllerApis] of controllerGroups) {
@@ -47,13 +53,21 @@ export class CodeGenerator {
 
 
   /**
-   * 按 Controller 分组 API
+   * 将 API 操作按 Controller 名称分组
+   *
+   * @param apis - API 组数组
+   * @returns Map<Controller名称, APIGroup[]> - 按 Controller 分组的结果
+   *
+   * 分组逻辑:
+   * 1. 遍历所有 API 组中的操作
+   * 2. 从操作名称中提取 Controller 名称 (例: UserController_getUser -> UserController)
+   * 3. 将相同 Controller 的操作归类到同一组
    */
   private groupByController(apis: APIGroup[]): Map<string, APIGroup[]> {
     const groups = new Map<string, APIGroup[]>();
-    
+
     for (const api of apis) {
-      // 从操作中提取 Controller 名称
+      // 遍历 API 组中的所有操作，提取 Controller 名称
       for (const operation of api.operations) {
         const controllerName = this.extractControllerName(operation.name);
         if (!groups.has(controllerName)) {
@@ -101,10 +115,19 @@ export class CodeGenerator {
   }
 
   /**
-   * 从操作名称提取 Controller 名称
+   * 从操作名称中提取 Controller 名称
+   *
+   * @param operationName - 操作名称 (例: "UserController_getUser", "user_getProfile")
+   * @returns 标准化的 Controller 名称 (例: "User")
+   *
+   * 提取规则:
+   * 1. 支持格式: "ControllerName_methodName" 或 "ControllerNameController_methodName"
+   * 2. 自动去除 "Controller" 后缀
+   * 3. 转换为 PascalCase 格式
+   * 4. 清理可能的日期信息
    */
   private extractControllerName(operationName: string): string {
-    // 严格按照 operationId 格式要求提取 Controller 名称
+    // 验证操作名称格式并提取 Controller 名称
     if (!operationName) {
       throw new Error(`❌ operationName 为空，无法提取Controller名称`);
     }
@@ -133,7 +156,7 @@ export class CodeGenerator {
     return `// 共享类型定义和基础 API 客户端
 
 import { HttpBuilder, HttpMethod } from 'openapi-ts-sdk';
-import { Json, ClassArray } from 'ts-json';
+import { plainToClass, classToPlain, Type, Expose, Exclude } from 'class-transformer';
 
 // API 配置接口
 export interface APIConfig {
@@ -192,13 +215,9 @@ export abstract class APIClient {
     method: HttpMethod,
     path: string,
     request: TRequest,
-    responseType: {new(...args:any[]): TResponse} | TResponse,
+    responseType: {new(...args:any[]): TResponse},
     options: APIOption[] = []
   ): Promise<TResponse> {
-    // 创建响应类型实例用于反序列化
-    if (typeof responseType === "function") {
-      responseType = new (responseType as any)()
-    }
     
     // 创建默认配置
     const config: APIConfig = {
@@ -223,7 +242,7 @@ export abstract class APIClient {
     
     // 序列化请求体（如果有）
     if (request) {
-      const requestJson = new Json().toJson(request);
+      const requestJson = JSON.stringify(classToPlain(request));
       httpBuilder.setContent(requestJson);
     }
     
@@ -238,11 +257,8 @@ export abstract class APIClient {
       throw new Error("response is empty");
     }
     
-    // 使用ts-json进行反序列化
-    const [result, parseError] = new Json().fromJson(response, responseType);
-    if (parseError) {
-      throw parseError;
-    }
+    // 使用class-transformer进行反序列化
+    const result = plainToClass(responseType, JSON.parse(response));
     return result;
   }
 }
@@ -273,7 +289,7 @@ export abstract class APIClient {
 import 'reflect-metadata';
 import { HttpMethod } from 'openapi-ts-sdk';
 import { APIClient, APIOption, APIConfig } from './types';
-import { Json, ClassArray } from 'ts-json';
+import { plainToClass, classToPlain, Type, Expose, Exclude } from 'class-transformer';
 import { IsString, IsNumber, IsBoolean, IsOptional, IsEmail, Min, Max, MinLength, MaxLength, Matches, validate } from 'class-validator';
 
 export namespace ${className} {`;
@@ -378,33 +394,7 @@ export namespace ${className} {`;
         collectedTypeNames.add(requestTypeName);
       }
       
-      // 注释掉原来的逻辑
-      if (false && operation.requestType) {
-        const requestTypeName = this.getSimpleName(operation.requestType!, controllerName);
-        
-        if (!collectedTypeNames.has(requestTypeName)) {
-          // 生成基础的请求类型定义，包含详细说明
-          const basicRequestType: TypeDefinition = {
-            name: requestTypeName,
-            description: `${operation.summary || operation.name} 请求类型`,
-            properties: {
-              // 留空，在generateNamespaceInterface中添加详细注释
-            }
-          };
-          
-          // 标记为缺失的Request类型，需要特殊处理
-          (basicRequestType as any).isMissingRequestType = true;
-          (basicRequestType as any).operationInfo = {
-            operationId: operation.name,
-            method: operation.method?.toUpperCase(),
-            path: operation.path,
-            summary: operation.summary
-          };
-          
-          nestedTypes.push(basicRequestType);
-          collectedTypeNames.add(requestTypeName);
-        }
-      } else {
+      {
         // 如果没有requestType，生成默认的Request类型
         const defaultRequestTypeName = this.getSimpleName(this.generateDefaultRequestTypeName(operation), controllerName);
         
@@ -413,11 +403,13 @@ export namespace ${className} {`;
             name: defaultRequestTypeName,
             description: `${operation.summary || operation.name} 请求类型`,
             properties: {
-              // 留空，在generateNamespaceInterface中添加详细注释
+              // 属性定义将在后续的接口生成中补充
             }
           };
           
+          // 标记为缺失的请求类型，用于后续特殊处理
           (basicRequestType as any).isMissingRequestType = true;
+          // 保存操作信息，用于生成更详细的文档注释
           (basicRequestType as any).operationInfo = {
             operationId: operation.name,
             method: operation.method?.toUpperCase(),
@@ -576,7 +568,7 @@ ${validationCode}
     const operationInfo = (type as any).operationInfo;
     
     if (isMissingRequest && operationInfo) {
-      // 为缺失的Request类型生成特殊的注释和基础结构
+      // 为缺失的Request类型生成详细的文档注释，包含缺失原因和解决方案
       return `  /** 
    * ${type.description || type.name + ' data type'}
    * 
@@ -605,7 +597,7 @@ ${validationCode}
      * • 服务器端完善后重新生成SDK即可获得完整类型定义
    */
   export class ${type.name} {
-    // TODO: 请根据API需求添加具体的属性定义
+    // 注意: 需要根据具体API需求添加属性定义
     // 可以参考 ${operationInfo.operationId} 的API文档或服务端DTO定义
 
     /** 验证请求数据 */
@@ -664,6 +656,26 @@ ${properties}${validateMethod}
   private generatePropertyDecorators(prop: TypeProperty): string {
     const decorators: string[] = [];
 
+    // 检查是否为数组类型
+    if (prop.type.endsWith('[]')) {
+      // 数组类型需要特殊处理
+      const itemType = prop.type.slice(0, -2); // 移除 '[]' 后缀
+
+      // 只有复杂对象数组才需要 ClassArray，基础类型数组不需要
+      if (this.isComplexType(itemType)) {
+        // 复杂类型数组（如 User[]、Msg[]）使用 @Type 装饰器
+        decorators.push(`    @Type(() => ${itemType})`);
+      }
+      // 基础类型数组（string[]、number[]、boolean[]）和内置类型不需要特殊装饰器
+
+      // 可选字段装饰器（根据 required 字段）
+      if (!prop.required) {
+        decorators.push('    @IsOptional()');
+      }
+
+      return decorators.length > 0 ? decorators.join('\n') + '\n' : '';
+    }
+
     // 基础类型装饰器
     switch (prop.type) {
       case 'string':
@@ -710,6 +722,41 @@ ${properties}${validateMethod}
     }
 
     return decorators.length > 0 ? decorators.join('\n') + '\n' : '';
+  }
+
+  /**
+   * 判断是否为复杂类型（需要使用 ClassArray 的类型）
+   */
+  private isComplexType(type: string): boolean {
+    // 基础类型不需要 ClassArray
+    const primitiveTypes = [
+      'string', 'number', 'boolean', 'integer',
+      'object', 'any', 'unknown', 'void', 'null', 'undefined'
+    ];
+
+    // TypeScript 内置类型不需要 ClassArray
+    const builtinTypes = [
+      'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet',
+      'Array', 'Promise', 'Function', 'Object', 'Record'
+    ];
+
+    // 泛型类型通常不需要 ClassArray
+    if (type.includes('<') || type.includes('>')) {
+      return false;
+    }
+
+    // 联合类型不需要 ClassArray
+    if (type.includes('|')) {
+      return false;
+    }
+
+    // 检查是否为基础类型或内置类型
+    if (primitiveTypes.includes(type.toLowerCase()) || builtinTypes.includes(type)) {
+      return false;
+    }
+
+    // 首字母大写的类型名，且不在排除列表中，认为是复杂的自定义类型
+    return /^[A-Z][a-zA-Z0-9]*$/.test(type);
   }
 
 

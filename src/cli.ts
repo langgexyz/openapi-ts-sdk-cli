@@ -263,50 +263,21 @@ program
       fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
       writtenFiles.push('tsconfig.json');
 
-      // 生成 rollup.config.js (UMD)
-      const rollupConfigPath = path.join(output, 'rollup.config.js');
-      const rollupConfig = `import typescript from '@rollup/plugin-typescript';
-import resolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
-import { terser } from 'rollup-plugin-terser';
+      // 生成 tsconfig.umd.json (UMD)
+      const tsconfigUmdPath = path.join(output, 'tsconfig.umd.json');
+      const tsconfigUmd = {
+        extends: './tsconfig.json',
+        compilerOptions: {
+          module: 'UMD',
+          outDir: 'dist/umd',
+          resolveJsonModule: false
+        },
+        include: ['src/**/*.ts', 'index.ts']
+      };
+      fs.writeFileSync(tsconfigUmdPath, JSON.stringify(tsconfigUmd, null, 2));
+      writtenFiles.push('tsconfig.umd.json');
 
-export default {
-  input: 'index.ts',
-  output: {
-    file: 'dist/umd/index.js',
-    format: 'umd',
-    name: '${packageName.replace(/[^a-zA-Z0-9]/g, '')}',
-    sourcemap: true,
-    globals: {
-      'openapi-ts-sdk': 'OpenApiTsSdk',
-      'ts-json': 'TsJson',
-      'class-transformer': 'ClassTransformer',
-      'class-validator': 'ClassValidator',
-      'reflect-metadata': 'ReflectMetadata'
-    }
-  },
-  external: ['openapi-ts-sdk', 'ts-json', 'class-transformer', 'class-validator', 'reflect-metadata'],
-  plugins: [
-    resolve({
-      browser: true,
-      preferBuiltins: false
-    }),
-    commonjs(),
-    typescript({
-      tsconfig: './tsconfig.json',
-      declaration: false,
-      declarationMap: false
-    }),
-    terser({
-      compress: {
-        drop_console: true,
-        drop_debugger: true
-      }
-    })
-  ]
-};`;
-      fs.writeFileSync(rollupConfigPath, rollupConfig);
-      writtenFiles.push('rollup.config.js');
+      // 不再生成 rollup.config.js，使用 TypeScript 编译器
 
       // 生成 package.json（如果不存在）
       const packageJsonPath = path.join(output, 'package.json');
@@ -337,29 +308,24 @@ export default {
             build: 'npm run build:cjs && npm run build:esm && npm run build:umd',
             'build:cjs': 'tsc -p tsconfig.cjs.json',
             'build:esm': 'tsc -p tsconfig.json',
-            'build:umd': 'rollup -c rollup.config.js',
+            'build:umd': 'tsc -p tsconfig.umd.json',
             clean: 'rm -rf dist',
             prepublishOnly: 'npm run clean && npm run build',
-            publish: 'npm publish',
+            publish: 'echo "Use npm run release instead"',
             'publish:beta': 'npm publish --tag beta',
             'publish:alpha': 'npm publish --tag alpha',
+            release: 'npm publish',
             test: 'echo "No tests specified" && exit 0',
             'test:build': 'npm run build && node -e "console.log(\\"Build test passed\\")"'
           },
           dependencies: {
             'openapi-ts-sdk': 'https://github.com/langgexyz/openapi-ts-sdk.git#semver:^1.0.0',
-            'ts-json': 'https://github.com/langgexyz/ts-json#semver:^0.2.0',
             'class-transformer': '^0.5.1',
             'class-validator': '^0.14.0',
             'reflect-metadata': '^0.1.13'
           },
           devDependencies: {
-            typescript: '^5.0.0',
-            rollup: '^2.79.1',
-            '@rollup/plugin-typescript': '^8.5.0',
-            '@rollup/plugin-node-resolve': '^13.3.0',
-            '@rollup/plugin-commonjs': '^22.0.0',
-            'rollup-plugin-terser': '^7.0.0'
+            typescript: '^5.0.0'
           }
         };
         
