@@ -319,7 +319,7 @@ program
             'test:build': 'npm run build && node -e "console.log(\\"Build test passed\\")"'
           },
           dependencies: {
-            'openapi-ts-sdk': 'https://github.com/langgexyz/openapi-ts-sdk.git#semver:^1.0.0',
+            'openapi-ts-sdk': 'https://github.com/langgexyz/openapi-ts-sdk.git#semver:^1.0.0.alpha',
             'class-transformer': '^0.5.1',
             'class-validator': '^0.14.0',
             'reflect-metadata': '^0.1.13'
