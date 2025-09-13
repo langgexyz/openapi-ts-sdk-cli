@@ -211,19 +211,20 @@ export class OpenAPIParser {
       }
     }
     
-    // 如果有错误，输出所有错误信息并抛出异常
+    // 如果有错误，输出所有错误信息并继续生成
     if (errors.length > 0) {
-      console.error('\n🚨 发现以下 operationId 格式错误:');
-      console.error('='.repeat(60));
+      console.warn('\n⚠️  发现以下 operationId 格式问题:');
+      console.warn('='.repeat(60));
       errors.forEach((error, index) => {
-        console.error(`\n${index + 1}. ${error}`);
+        console.warn(`\n${index + 1}. ${error}`);
       });
-      console.error('\n📖 operationId 命名规范说明:');
-      console.error('   格式: {controllerName}Controller_{methodName} 或 {controllerName}_{methodName}');
-      console.error('   示例: userController_getUsers, orderController_createOrder');
-      console.error('   注意: 使用驼峰命名，controllerName应与文件名对应');
-      console.error('='.repeat(60));
-      throw new Error(`发现 ${errors.length} 个 operationId 格式错误，请修复后重新生成`);
+      console.warn('\n📖 operationId 命名规范说明:');
+      console.warn('   格式: {controllerName}Controller_{methodName} 或 {controllerName}_{methodName}');
+      console.warn('   示例: userController_getUsers, orderController_createOrder');
+      console.warn('   注意: 使用驼峰命名，controllerName应与文件名对应');
+      console.warn('='.repeat(60));
+      console.warn(`⚠️  发现 ${errors.length} 个格式问题，将继续生成代码但可能影响代码质量和可读性`);
+      console.warn('💡 建议按照上述规范修复后重新生成以获得最佳代码质量\n');
     }
     
     return groups;
