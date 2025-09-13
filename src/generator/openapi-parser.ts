@@ -236,7 +236,7 @@ export class OpenAPIParser {
       }
     }
     
-    // 如果有错误，输出警告信息但继续生成
+    // 如果有错误，输出所有错误信息并继续生成
     if (errors.length > 0) {
       console.warn('\n⚠️  发现以下 operationId 格式问题:');
       console.warn('='.repeat(60));

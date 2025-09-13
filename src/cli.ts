@@ -377,10 +377,22 @@ export default {
       console.log('   npm install');
       console.log('   # 使用示例:');
       console.log('   # import { User } from "./index";');
-      console.log('   # import { HttpBuilder } from "openapi-ts-sdk";');
       console.log('   # ');
-      console.log('   # const httpBuilder = new HttpBuilder("http://localhost:3000");');
-      console.log('   # const userApi = new User.Client(httpBuilder);');
+      console.log('   # // 1. 使用 Axios HttpBuilder');
+      console.log('   # import { AxiosHttpBuilder } from "openapi-ts-sdk-axios";');
+      console.log('   # const axiosBuilder = new AxiosHttpBuilder("http://localhost:3000");');
+      console.log('   # const userApi = new User.Client(axiosBuilder);');
+      console.log('   # ');
+      console.log('   # // 2. 使用 Fetch HttpBuilder');
+      console.log('   # import { FetchHttpBuilder } from "openapi-ts-sdk-fetch";');
+      console.log('   # const fetchBuilder = new FetchHttpBuilder("http://localhost:3000");');
+      console.log('   # const userApi2 = new User.Client(fetchBuilder);');
+      console.log('   # ');
+      console.log('   # // 3. 使用 Gateway HttpBuilder');
+      console.log('   # import { GatewayHttpBuilder } from "openapi-ts-sdk-gateway";');
+      console.log('   # const gatewayBuilder = new GatewayHttpBuilder("http://localhost:3000");');
+      console.log('   # const userApi3 = new User.Client(gatewayBuilder);');
+      console.log('   # ');
       console.log('   # const result = await userApi.getUsers();');
       
     } catch (error) {
