@@ -38,7 +38,7 @@ npm install openapi-ts-sdk-cli --save-dev
 openapi-ts-sdk-cli generate -i ./openapi.json -o ./generated
 
 # 1. 生成 API 客户端（网络地址）
-openapi-ts-sdk-cli generate -i https://api.example.com/openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i http://localhost:7001/swagger-ui/index.json.json -o ./generated
 
 # 2. 安装生成的依赖
 cd ./generated
@@ -229,7 +229,7 @@ const userApi = new UserApi(httpBuilder);
 
 | 选项 | 描述 | 默认值 | 示例 |
 |------|------|--------|------|
-| `-i, --input <file>` | OpenAPI 规范文件 (JSON) 或 URL | 必需 | `-i ./api.json` 或 `-i https://api.example.com/openapi.json` |
+| `-i, --input <file>` | OpenAPI 规范文件 (JSON) 或 URL | 必需 | `-i ./api.json` 或 `-i http://localhost:7001/swagger-ui/index.json.json` |
 | `-o, --output <dir>` | 输出目录 | `./generated` | `-o ./src/api` |
 | `-n, --name <name>` | 生成的类名前缀 | 从项目名称推断 | `-n MyAPI` |
 | `-p, --package <package>` | openapi-ts-sdk 包名 | `openapi-ts-sdk` | `-p @my/openapi-ts-sdk` |
@@ -243,7 +243,7 @@ const userApi = new UserApi(httpBuilder);
 openapi-ts-sdk-cli generate -i ./openapi.json -o ./generated
 
 # 基本用法（网络地址）
-openapi-ts-sdk-cli generate -i https://api.example.com/openapi.json -o ./generated
+openapi-ts-sdk-cli generate -i http://localhost:7001/swagger-ui/index.json.json -o ./generated
 
 # 从 GitHub 仓库获取
 openapi-ts-sdk-cli generate -i https://raw.githubusercontent.com/user/repo/main/openapi.json -o ./generated
@@ -259,7 +259,7 @@ openapi-ts-sdk-cli generate \
 openapi-ts-sdk-cli validate -i ./openapi.json
 
 # 验证 OpenAPI 规范（网络地址）
-openapi-ts-sdk-cli validate -i https://api.example.com/openapi.json
+openapi-ts-sdk-cli validate -i http://localhost:7001/swagger-ui/index.json.json
 
 # 查看帮助
 openapi-ts-sdk-cli --help

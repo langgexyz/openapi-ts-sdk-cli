@@ -13,7 +13,19 @@ interface PackageJsonStructure {
   version: string;
   description: string;
   main: string;
+  module?: string;
   types: string;
+  browser?: string;
+  unpkg?: string;
+  jsdelivr?: string;
+  files?: string[];
+  keywords?: string[];
+  repository?: {
+    type: string;
+    url: string;
+  };
+  author?: string;
+  license?: string;
   scripts?: Record<string, string>;
   dependencies: Record<string, string>;
   devDependencies?: Record<string, string>;
@@ -71,10 +83,11 @@ program
 program
   .command('generate')
   .description('Generate API client from OpenAPI spec')
-  .option('-i, --input <file>', 'OpenAPI specification file (JSON) or URL (http://|https://)')
+  .option('-i, --input <file>', 'OpenAPI specification file (JSON) or URL (http://|https://)', 'http://localhost:7001/swagger-ui/index.json')
   .option('-o, --output <dir>', 'Output directory', './generated')
   .option('-n, --name <name>', 'Generated class name prefix')
-  .option('-p, --package <package>', 'ts-sdk-client package name', 'ts-sdk-client')
+  .option('-p, --package <package>', 'openapi-ts-sdk package name', 'openapi-ts-sdk')
+  .option('-v, --version <version>', 'Package version (default: 1.0.0)', '1.0.0')
   .action(async (options) => {
     const { input, output, name, package: packageName } = options;
     
@@ -82,7 +95,7 @@ program
       console.error('❌ Input file or URL is required. Use -i or --input to specify the OpenAPI file or URL.');
       console.error('   示例:');
       console.error('   -i ./openapi.json                    # 本地文件');
-      console.error('   -i https://api.example.com/openapi   # 网络地址');
+      console.error('   -i http://localhost:7001/swagger-ui/index.json   # 网络地址');
       process.exit(1);
     }
 
@@ -90,6 +103,7 @@ program
       console.log('🚀 Starting API generation...');
       console.log(`📄 Input: ${input}`);
       console.log(`📁 Output: ${output}`);
+      console.log(`📦 Version: ${options.version}`);
       
       // 读取 OpenAPI 文件（支持本地文件和 URL）
       let specContent: string;
@@ -174,25 +188,35 @@ program
       }
       fs.mkdirSync(output, { recursive: true });
       console.log(`📁 Created output directory: ${output}`);
+      
+      // 创建 src 目录
+      const srcDir = path.join(output, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+      console.log(`📁 Created src directory: ${srcDir}`);
 
       // 写入生成的文件
       const writtenFiles: string[] = [];
       for (const [fileName, content] of files) {
-        const filePath = path.join(output, fileName);
+        // index.ts 放在根目录，其他 TypeScript 文件放在 src 目录中
+        const isIndexFile = fileName === 'index.ts';
+        const isTypeScriptFile = fileName.endsWith('.ts');
+        const targetDir = isIndexFile ? output : (isTypeScriptFile ? srcDir : output);
+        const filePath = path.join(targetDir, fileName);
+        
         fs.writeFileSync(filePath, content);
-        writtenFiles.push(fileName);
+        writtenFiles.push(isIndexFile ? fileName : (isTypeScriptFile ? `src/${fileName}` : fileName));
       }
 
-      // 生成 tsconfig.json
-      const tsconfigPath = path.join(output, 'tsconfig.json');
-      const tsconfig = {
+      // 生成 tsconfig.cjs.json (CommonJS)
+      const tsconfigCjsPath = path.join(output, 'tsconfig.cjs.json');
+      const tsconfigCjs = {
         compilerOptions: {
           target: 'ES2020',
           lib: ['ES2020'],
           module: 'CommonJS',
           declaration: true,
-          outDir: './dist',
-          rootDir: './',
+          outDir: './dist/cjs',
+          rootDir: '.',
           strict: true,
           esModuleInterop: true,
           skipLibCheck: true,
@@ -205,36 +229,139 @@ program
           experimentalDecorators: true,
           emitDecoratorMetadata: true
         },
-        include: ['*.ts'],
+        include: ['src/**/*.ts', 'index.ts'],
+        exclude: ['node_modules', 'dist']
+      };
+      fs.writeFileSync(tsconfigCjsPath, JSON.stringify(tsconfigCjs, null, 2));
+      writtenFiles.push('tsconfig.cjs.json');
+
+      // 生成 tsconfig.json (ES Modules)
+      const tsconfigPath = path.join(output, 'tsconfig.json');
+      const tsconfig = {
+        compilerOptions: {
+          target: 'ES2020',
+          lib: ['ES2020'],
+          module: 'ES2020',
+          declaration: true,
+          outDir: './dist/esm',
+          rootDir: '.',
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          forceConsistentCasingInFileNames: true,
+          moduleResolution: 'node',
+          resolveJsonModule: true,
+          allowSyntheticDefaultImports: true,
+          sourceMap: false,
+          removeComments: false,
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true
+        },
+        include: ['src/**/*.ts', 'index.ts'],
         exclude: ['node_modules', 'dist']
       };
       fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
       writtenFiles.push('tsconfig.json');
 
+      // 生成 rollup.config.js (UMD)
+      const rollupConfigPath = path.join(output, 'rollup.config.js');
+      const rollupConfig = `import typescript from '@rollup/plugin-typescript';
+import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import { terser } from 'rollup-plugin-terser';
+
+export default {
+  input: 'index.ts',
+  output: {
+    file: 'dist/umd/index.js',
+    format: 'umd',
+    name: '${packageName.replace(/[^a-zA-Z0-9]/g, '')}',
+    sourcemap: true,
+    globals: {
+      'openapi-ts-sdk': 'OpenApiTsSdk',
+      'ts-json': 'TsJson',
+      'class-transformer': 'ClassTransformer',
+      'class-validator': 'ClassValidator',
+      'reflect-metadata': 'ReflectMetadata'
+    }
+  },
+  external: ['openapi-ts-sdk', 'ts-json', 'class-transformer', 'class-validator', 'reflect-metadata'],
+  plugins: [
+    resolve({
+      browser: true,
+      preferBuiltins: false
+    }),
+    commonjs(),
+    typescript({
+      tsconfig: './tsconfig.json',
+      declaration: false,
+      declarationMap: false
+    }),
+    terser({
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      }
+    })
+  ]
+};`;
+      fs.writeFileSync(rollupConfigPath, rollupConfig);
+      writtenFiles.push('rollup.config.js');
+
       // 生成 package.json（如果不存在）
       const packageJsonPath = path.join(output, 'package.json');
       if (!fs.existsSync(packageJsonPath)) {
-      const packageJson: PackageJsonStructure = {
-        name: 'generated-api-client',
-        version: '1.0.0',
-        description: 'Generated API client from OpenAPI specification',
-        main: 'dist/index.js',
-        types: 'dist/index.d.ts',
-        scripts: {
-          build: 'tsc',
-          clean: 'rm -rf dist',
-          prepublishOnly: 'npm run clean && npm run build'
-        },
-        dependencies: {
-          [packageName]: 'https://github.com/langgexyz/openapi-ts-sdk.git#semver:^1.0.0',
-          'class-transformer': '^0.5.1',
-          'class-validator': '^0.14.0',
-          'reflect-metadata': '^0.1.13'
-        },
-        devDependencies: {
-          typescript: '^5.0.0'
-        }
-      };
+        // 根据输出目录名生成package name
+        const outputDirName = path.basename(path.resolve(output));
+        const packageName = outputDirName.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase();
+        
+        const packageJson: PackageJsonStructure = {
+          name: packageName,
+          version: options.version || '1.0.0',
+          description: 'Generated API client from OpenAPI specification',
+          main: 'dist/cjs/index.js',
+          module: 'dist/esm/index.js',
+          types: 'dist/cjs/index.d.ts',
+          browser: 'dist/umd/index.js',
+          unpkg: 'dist/umd/index.js',
+          jsdelivr: 'dist/umd/index.js',
+          files: ['dist/**/*', 'README.md'],
+          keywords: ['api', 'client', 'typescript', 'openapi', 'generated'],
+          repository: {
+            type: 'git',
+            url: 'git+https://github.com/your-org/your-repo.git'
+          },
+          author: 'Generated by openapi-ts-sdk-cli',
+          license: 'MIT',
+          scripts: {
+            build: 'npm run build:cjs && npm run build:esm && npm run build:umd',
+            'build:cjs': 'tsc -p tsconfig.cjs.json',
+            'build:esm': 'tsc -p tsconfig.json',
+            'build:umd': 'rollup -c rollup.config.js',
+            clean: 'rm -rf dist',
+            prepublishOnly: 'npm run clean && npm run build',
+            publish: 'npm publish',
+            'publish:beta': 'npm publish --tag beta',
+            'publish:alpha': 'npm publish --tag alpha',
+            test: 'echo "No tests specified" && exit 0',
+            'test:build': 'npm run build && node -e "console.log(\\"Build test passed\\")"'
+          },
+          dependencies: {
+            'openapi-ts-sdk': 'https://github.com/langgexyz/openapi-ts-sdk.git#semver:^1.0.0',
+            'ts-json': 'https://github.com/langgexyz/ts-json#semver:^0.2.0',
+            'class-transformer': '^0.5.1',
+            'class-validator': '^0.14.0',
+            'reflect-metadata': '^0.1.13'
+          },
+          devDependencies: {
+            typescript: '^5.0.0',
+            rollup: '^2.79.1',
+            '@rollup/plugin-typescript': '^8.5.0',
+            '@rollup/plugin-node-resolve': '^13.3.0',
+            '@rollup/plugin-commonjs': '^22.0.0',
+            'rollup-plugin-terser': '^7.0.0'
+          }
+        };
         
         fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
         console.log(`📦 Generated package.json`);
@@ -250,7 +377,7 @@ program
       console.log('   npm install');
       console.log('   # 使用示例:');
       console.log('   # import { User } from "./index";');
-      console.log('   # import { HttpBuilder } from "ts-sdk-client";');
+      console.log('   # import { HttpBuilder } from "openapi-ts-sdk";');
       console.log('   # ');
       console.log('   # const httpBuilder = new HttpBuilder("http://localhost:3000");');
       console.log('   # const userApi = new User.Client(httpBuilder);');

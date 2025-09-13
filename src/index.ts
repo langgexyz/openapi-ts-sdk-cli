@@ -1,6 +1,6 @@
 /**
  * TypeScript SDK Client Generator - 主入口文件
- * 从 OpenAPI 规范生成基于 ts-sdk-client 的 TypeScript API 客户端
+ * 从 OpenAPI 规范生成基于 openapi-ts-sdk 的 TypeScript API 客户端
  */
 
 // 导出核心生成器

@@ -92,6 +92,15 @@ export class OpenAPIParser {
       const parsedOperations: APIOperation[] = [];
 
       for (const op of operations) {
+        // 转换参数格式
+        const convertedParameters: Parameter[] | undefined = op.parameters ? 
+          op.parameters.map((param: any) => ({
+            name: param.name,
+            type: param.in === 'path' ? 'string' : (this.mapOpenAPITypeToTS(param.schema?.type, param.schema) || 'unknown'),
+            required: param.required || false,
+            in: param.in
+          })) : undefined;
+
         // 使用策略模式解析操作
         const parsedOp: APIOperation = {
           name: op.operationId!,
@@ -99,6 +108,7 @@ export class OpenAPIParser {
           path: op.path,
           summary: op.summary,
           description: op.description,
+          parameters: convertedParameters,
           requestType: op.requestBody ? `${this.extractTypeNameFromOperationId(op.operationId)}Request` : undefined,
           responseType: `${this.extractTypeNameFromOperationId(op.operationId)}Response`
         };
@@ -106,16 +116,22 @@ export class OpenAPIParser {
         
         // 生成请求/响应类型（去重） - 使用策略模式
         if (op.requestBody) {
-          const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Request`;
-          const requestType = this.parseRequestType(op);
-          allTypes.set(requestType.name, requestType);
+          try {
+            const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Request`;
+            const requestType = this.parseRequestType(op);
+            allTypes.set(requestType.name, requestType);
+            console.log(`✅ 成功生成 Request 类型: ${requestType.name} for ${op.operationId}`);
+          } catch (error) {
+            console.warn(`⚠️  解析 Request 类型失败: ${op.operationId} - ${error instanceof Error ? error.message : error}`);
+            // 继续处理其他类型，不中断整个流程
+          }
         }
         if (op.responses) {
           const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Response`;
           const responseType: TypeDefinition = {
             name: typeName,
             description: op.summary || `${op.operationId} 响应类型`,
-            properties: { data: { type: 'any', required: false, description: '响应数据' } }
+            properties: { data: { type: 'unknown', required: false, description: '响应数据' } }
           };
           allTypes.set(responseType.name, responseType);
         }
@@ -200,12 +216,21 @@ export class OpenAPIParser {
         if (!groups[tag]) {
           groups[tag] = [];
         }
+        // 转换参数格式
+        const convertedParameters: Parameter[] | undefined = operation.parameters ? 
+          operation.parameters.map((param: any) => ({
+            name: param.name,
+            type: param.in === 'path' ? 'string' : (this.mapOpenAPITypeToTS(param.schema?.type, param.schema) || 'unknown'),
+            required: param.required || false,
+            in: param.in
+          })) : undefined;
+
         // 类型转换，确保类型兼容
         const operationWithPath: OperationWithPath = {
           path,
           method,
           ...operation,
-          parameters: operation.parameters as Parameter[] | undefined
+          parameters: convertedParameters
         };
         groups[tag].push(operationWithPath);
       }
@@ -440,6 +465,37 @@ export class OpenAPIParser {
   }
 
   /**
+   * 映射 OpenAPI 类型到 TypeScript 类型
+   * @returns 返回具体类型，如果无法推导则返回null
+   */
+  private mapOpenAPITypeToTS(openApiType?: string, schema?: any): string | null {
+    switch (openApiType) {
+      case 'string':
+        return 'string';
+      case 'number':
+      case 'integer':
+        return 'number';
+      case 'boolean':
+        return 'boolean';
+      case 'array':
+        // 检查数组元素类型
+        if (schema?.items?.type) {
+          const itemType = this.mapOpenAPITypeToTS(schema.items.type, schema.items);
+          if (itemType) {
+            return `${itemType}[]`;
+          }
+        }
+        // 如果无法推导数组元素类型，返回null
+        return null;
+      case 'object':
+        return 'Record<string, unknown>';
+      default:
+        // 无法推导的类型返回null
+        return null;
+    }
+  }
+
+  /**
    * 类型守卫：检查是否为ReferenceObject
    */
   private isReferenceObject(obj: unknown): obj is OpenAPIV3.ReferenceObject {
@@ -455,8 +511,17 @@ export class OpenAPIParser {
         // 明确类型化属性模式
         const prop = this.isSchemaObject(propSchema) ? propSchema : { type: 'string' };
         
+        // 尝试推导类型
+        const mappedType = this.mapOpenAPITypeToTS(prop.type, prop);
+        
+        // 如果无法推导出具体类型，发出警告并跳过该字段
+        if (!mappedType || mappedType === 'unknown') {
+          console.warn(`⚠️  字段类型推导失败: ${name}.${propName} - 缺少明确的类型定义，建议在OpenAPI规范中为该字段添加具体的type属性`);
+          continue; // 跳过该字段，不添加到类型定义中
+        }
+        
         properties[propName] = {
-          type: prop.type || 'string', // 默认为string而不是any
+          type: mappedType,
           required: schema.required?.includes(propName) || false,
           description: this.isSchemaObject(propSchema) ? propSchema.description : undefined,
           // OpenAPI 验证属性（只有当是 SchemaObject 时才访问）
@@ -592,12 +657,9 @@ export class OpenAPIParser {
       throw new Error('operationId is required for generating type names');
     }
     
-    // 移除各种技术前缀，只保留核心操作名
-    let cleanName = operationId
-      .replace(/^.*Controller_?/i, '') // 移除 XxxController_ 前缀
-      .replace(/^.*controller_?/i, '') // 移除 xxxcontroller_ 前缀
-      .replace(/^.*Api_?/i, '')        // 移除 XxxApi_ 前缀
-      .replace(/^.*api_?/i, '');       // 移除 xxxapi_ 前缀
+    // 移除控制器前缀，只保留核心操作名
+    // 例如: admindashboard_getalertescalations -> getalertescalations
+    let cleanName = operationId.replace(/^[^_]+_/, ''); // 移除第一个下划线之前的所有内容
     
     // 如果移除前缀后为空，说明 operationId 格式有问题
     if (!cleanName.trim()) {

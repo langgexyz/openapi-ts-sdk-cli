@@ -4,7 +4,7 @@
 
 import { pascalCase, camelCase } from 'change-case';
 import { APIGroup, TypeDefinition, APIOperation, TypeProperty } from './openapi-parser';
-import { TemplateStrategyManager } from './template-strategies';
+// import { TemplateStrategyManager } from './template-strategies'; // 未使用，已注释
 
 export interface GeneratorOptions {
   className?: string;
@@ -13,10 +13,10 @@ export interface GeneratorOptions {
 }
 
 export class CodeGenerator {
-  private templateManager: TemplateStrategyManager;
+  // private templateManager: TemplateStrategyManager; // 未使用，已注释
 
   constructor() {
-    this.templateManager = new TemplateStrategyManager();
+    // this.templateManager = new TemplateStrategyManager(); // 未使用，已注释
   }
 
   /**
@@ -132,7 +132,7 @@ export class CodeGenerator {
   private generateSharedApiTypes(): string {
     return `// 共享类型定义和基础 API 客户端
 
-import { HttpBuilder, HttpMethod } from 'ts-sdk-client';
+import { HttpBuilder, HttpMethod } from 'openapi-ts-sdk';
 import { Json, ClassArray } from 'ts-json';
 
 // API 配置接口
@@ -195,12 +195,9 @@ export abstract class APIClient {
     responseType: {new(...args:any[]): TResponse} | TResponse,
     options: APIOption[] = []
   ): Promise<TResponse> {
-    // 处理响应类型：如果是构造函数则创建实例
-    let resTypeInstance: TResponse;
+    // 创建响应类型实例用于反序列化
     if (typeof responseType === "function") {
-      resTypeInstance = new responseType();
-    } else {
-      resTypeInstance = responseType;
+      responseType = new (responseType as any)()
     }
     
     // 创建默认配置
@@ -242,11 +239,11 @@ export abstract class APIClient {
     }
     
     // 使用ts-json进行反序列化
-    const [result, parseError] = new Json().fromJson(response, resTypeInstance);
+    const [result, parseError] = new Json().fromJson(response, responseType);
     if (parseError) {
       throw parseError;
     }
-    return result as TResponse;
+    return result;
   }
 }
 `;
@@ -256,34 +253,57 @@ export abstract class APIClient {
    * 生成单个 Controller 的 API 类
    */
   private generateControllerApi(controllerName: string, apis: APIGroup[], options: GeneratorOptions): string {
-    const packageName = options.packageName || 'ts-sdk-client';
+    const packageName = options.packageName || 'openapi-ts-sdk';
     const className = controllerName; // 直接使用controllerName，不拼接Api后缀
     
-    let output = `import 'reflect-metadata';
-import { HttpMethod } from '${packageName}';
+    let output = `/**
+ * ⚠️  此文件由 openapi-ts-sdk-cli 自动生成，请勿手动修改！
+ * 
+ * 📅 生成时间: ${new Date().toISOString()}
+ * 🔧 生成工具: openapi-ts-sdk-cli
+ * 📄 源文件: OpenAPI 规范文档
+ * 
+ * 💡 如需修改，请：
+ * 1. 修改服务器端的 OpenAPI 规范
+ * 2. 重新运行 openapi-ts-sdk-cli 生成
+ * 
+ * 🚫 请勿直接编辑此文件，修改将在下次生成时被覆盖！
+ */
+
+import 'reflect-metadata';
+import { HttpMethod } from 'openapi-ts-sdk';
 import { APIClient, APIOption, APIConfig } from './types';
 import { Json, ClassArray } from 'ts-json';
 import { IsString, IsNumber, IsBoolean, IsOptional, IsEmail, Min, Max, MinLength, MaxLength, Matches, validate } from 'class-validator';
 
 export namespace ${className} {`;
 
+    // 先收集所有操作
+    const allOperations: APIOperation[] = [];
+    for (const api of apis) {
+      allOperations.push(...api.operations);
+    }
+    
     // 收集该 Controller 相关的类型定义（去重）
     const controllerTypes: Map<string, TypeDefinition> = new Map();
-    const allOperations: APIOperation[] = [];
     
     for (const api of apis) {
       // 收集相关的类型定义
       for (const type of api.types) {
-        if (type.name.toLowerCase().includes(controllerName.toLowerCase()) || 
-            type.name === 'Error' || // 通用错误类型
-            allOperations.some(op => op.requestType === type.name || op.responseType === type.name)) {
+        // 检查类型是否属于当前控制器  
+        // 使用兜底策略：包含所有Request和Response类型
+        const belongsToController = 
+          type.name.toLowerCase().includes(controllerName.toLowerCase()) || 
+          type.name === 'Error' || // 通用错误类型
+          allOperations.some(op => op.requestType === type.name || op.responseType === type.name) ||
+          // 兜底策略：包含所有Request和Response类型到每个控制器
+          type.name.toLowerCase().includes('request') || type.name.toLowerCase().includes('response');
+        
+        if (belongsToController) {
           // 使用 Map 去重
           controllerTypes.set(type.name, type);
         }
       }
-      
-      // 收集操作
-      allOperations.push(...api.operations);
     }
 
     // 收集简化的类型定义，准备作为嵌套类
@@ -293,27 +313,32 @@ export namespace ${className} {`;
     // 收集明确定义的类型
     if (controllerTypes.size > 0) {
       for (const [_, type] of controllerTypes) {
-        // 移除前缀，使用简洁名称并转换为正确的驼峰格式
-        const originalName = type.name.replace(new RegExp(`^${controllerName.toLowerCase()}controller`, 'i'), '')
-                                      .replace(/^_/, ''); // 移除开头的下划线
+        // 简化类型名称：移除控制器前缀
+        let simplifiedName = type.name;
         
+        // 移除控制器名前缀（如果存在）
+        const controllerPrefix = this.toPascalCase(controllerName);
+        if (simplifiedName.startsWith(controllerPrefix)) {
+          simplifiedName = simplifiedName.substring(controllerPrefix.length);
+        }
+        
+        // 确保是PascalCase
+        simplifiedName = this.toPascalCase(simplifiedName);
         
         const simplifiedType = {
           ...type,
-          name: this.toPascalCase(originalName)
+          name: simplifiedName
         };
         nestedTypes.push(simplifiedType);
-        collectedTypeNames.add(simplifiedType.name);
+        collectedTypeNames.add(simplifiedName);
       }
     }
     
-    // 收集所有操作使用的响应类型，为缺失的类型生成基础定义
+    // 收集所有操作使用的类型，为缺失的类型生成基础定义
     
     for (const operation of allOperations) {
-      const responseTypeName = operation.responseType ?
-        this.getSimplifiedTypeName(operation.responseType, controllerName) : 
-        this.getSimplifiedTypeName(this.generateDefaultResponseTypeName(operation), controllerName);
-      
+      // 处理Response类型 - 统一使用基于方法名生成的类型名
+      const responseTypeName = this.getSimpleName(this.generateDefaultResponseTypeName(operation), controllerName);
       
       if (!collectedTypeNames.has(responseTypeName)) {
         // 生成基础的响应类型定义
@@ -322,7 +347,7 @@ export namespace ${className} {`;
           description: `${operation.summary || operation.name} 响应类型`,
           properties: {
             data: {
-              type: 'any',
+              type: 'unknown',
               required: false,
               description: '响应数据'
             }
@@ -330,8 +355,79 @@ export namespace ${className} {`;
         };
         nestedTypes.push(basicResponseType);
         collectedTypeNames.add(responseTypeName);
+      }
+      
+      // 处理Request类型 - 使用新的方法名生成
+      // 统一使用基于方法名生成的Request类型名
+      const requestTypeName = this.getSimpleName(this.generateDefaultRequestTypeName(operation), controllerName);
+      
+      if (!collectedTypeNames.has(requestTypeName)) {
+        const basicRequestType: TypeDefinition = {
+          name: requestTypeName,
+          description: `${operation.summary || operation.name} 请求类型`,
+          properties: {}
+        };
+        (basicRequestType as any).isMissingRequestType = true;
+        (basicRequestType as any).operationInfo = {
+          operationId: operation.name,
+          method: operation.method?.toUpperCase(),
+          path: operation.path,
+          summary: operation.summary
+        };
+        nestedTypes.push(basicRequestType);
+        collectedTypeNames.add(requestTypeName);
+      }
+      
+      // 注释掉原来的逻辑
+      if (false && operation.requestType) {
+        const requestTypeName = this.getSimpleName(operation.requestType!, controllerName);
         
+        if (!collectedTypeNames.has(requestTypeName)) {
+          // 生成基础的请求类型定义，包含详细说明
+          const basicRequestType: TypeDefinition = {
+            name: requestTypeName,
+            description: `${operation.summary || operation.name} 请求类型`,
+            properties: {
+              // 留空，在generateNamespaceInterface中添加详细注释
+            }
+          };
+          
+          // 标记为缺失的Request类型，需要特殊处理
+          (basicRequestType as any).isMissingRequestType = true;
+          (basicRequestType as any).operationInfo = {
+            operationId: operation.name,
+            method: operation.method?.toUpperCase(),
+            path: operation.path,
+            summary: operation.summary
+          };
+          
+          nestedTypes.push(basicRequestType);
+          collectedTypeNames.add(requestTypeName);
+        }
       } else {
+        // 如果没有requestType，生成默认的Request类型
+        const defaultRequestTypeName = this.getSimpleName(this.generateDefaultRequestTypeName(operation), controllerName);
+        
+        if (!collectedTypeNames.has(defaultRequestTypeName)) {
+          const basicRequestType: TypeDefinition = {
+            name: defaultRequestTypeName,
+            description: `${operation.summary || operation.name} 请求类型`,
+            properties: {
+              // 留空，在generateNamespaceInterface中添加详细注释
+            }
+          };
+          
+          (basicRequestType as any).isMissingRequestType = true;
+          (basicRequestType as any).operationInfo = {
+            operationId: operation.name,
+            method: operation.method?.toUpperCase(),
+            path: operation.path,
+            summary: operation.summary
+          };
+          
+          nestedTypes.push(basicRequestType);
+          collectedTypeNames.add(defaultRequestTypeName);
+        }
       }
     }
 
@@ -363,33 +459,74 @@ export namespace ${className} {`;
   }
 
   /**
-   * 生成带 options 的 API 方法 - 使用模板策略
+   * 生成带 options 的 API 方法 - 直接调用executeRequest
    */
   private generateApiMethodWithOptions(operation: APIOperation, controllerName?: string, hasNamespace: boolean = true): string {
     const hasRequest = !!(operation.requestType && operation.requestType !== 'void');
-    const methodName = operation.name.replace(/^.+?Controller_/, ''); // 移除 Controller 前缀
+    // 移除控制器前缀，只保留方法名
+    // 例如: analyticshandler_getsegmentedreport -> getsegmentedreport
+    // 基于路径生成更准确的方法名
+    const methodName = this.generateMethodNameFromPath(operation);
     
-    // 使用嵌套类的类型名称
-    const requestType = operation.requestType ? 
-      this.getNestedTypeName(operation.requestType, controllerName, hasNamespace) : undefined;
-    const responseType = operation.responseType ?
-      this.getNestedTypeName(operation.responseType, controllerName, hasNamespace) : 
-      this.getNestedTypeName(this.generateDefaultResponseTypeName(operation), controllerName, hasNamespace);
+    // 使用嵌套类的类型名称（带namespace前缀，用于类型声明）
+    // 统一使用基于方法名生成的类型名，确保一致性
+    const requestType = this.getNestedTypeName(this.generateDefaultRequestTypeName(operation), controllerName, hasNamespace);
+    const responseType = this.getNestedTypeName(this.generateDefaultResponseTypeName(operation), controllerName, hasNamespace);
+      
+    // 类型名称处理在executeRequest调用中直接完成
+    
+    // 提取路径参数
+    const pathParams = (operation.parameters || []).filter(p => p && p.in === 'path');
+    
+    
+    // 生成路径参数列表
+    const pathParamsList = pathParams.map(p => `${p.name}: ${p.type}`).join(', ');
+    const pathParamsPrefix = pathParamsList ? `${pathParamsList}, ` : '';
+    
+    // 生成路径表达式（使用模板字符串）
+    let pathExpression: string;
+    if (pathParams.length > 0) {
+      // 将 {param} 替换为 ${param}，生成模板字符串
+      const templatePath = operation.path.replace(/\{([^}]+)\}/g, '${$1}');
+      pathExpression = `\`${templatePath}\``;
+    } else {
+      pathExpression = `'${operation.path}'`;
+    }
+    
+    // 生成参数列表
+    const requestParam = hasRequest ? `request: ${requestType}, ` : '';
+    const requestArg = hasRequest ? 'request' : `new ${requestType.includes('.') ? requestType.split('.')[1] : requestType}()`;
     
     // 生成验证代码（如果需要）
-    const validationCode = hasRequest ? `    validate${operation.requestType?.replace(/[^a-zA-Z0-9]/g, '')}(request);` : '';
+    const validationCode = hasRequest ? `      await request.validate();\n` : '';
     
-    return this.templateManager.generate('api-method', {
-      operation: {
-        ...operation,
-        method: operation.method.toUpperCase(),
-        requestType,
-        responseType
-      },
-      methodName,
-      hasRequest,
-      validationCode
-    });
+    return `  /**
+   * ${operation.summary || methodName}
+   * 
+   * @description Execute ${operation.summary || methodName} operation
+   * @method ${operation.method.toUpperCase()}
+   * @path ${operation.path}
+   * 
+   * ${pathParams.map(p => `@param {${p.type}} ${p.name} - Path parameter`).join('\n   * ')}${pathParams.length > 0 ? '\n   * ' : ''}${hasRequest ? `@param {${requestType.includes('.') ? requestType.split('.')[1] : requestType}} request - Request parameters\n   * ` : ''}@param {...APIOption} options - Functional option parameters
+   * @returns {Promise<${responseType.includes('.') ? responseType.split('.')[1] : responseType}>} Returns API response result
+   * 
+   * @example
+   * const result = await api.${methodName}(${pathParams.map(p => p.name).join(', ')}${pathParams.length > 0 && hasRequest ? ', ' : ''}${hasRequest ? 'request' : ''});
+   * 
+   * @throws {Error} Throws error when request fails or parameter validation fails
+   */
+  async ${methodName}(${pathParamsPrefix}${requestParam}...options: APIOption[]): Promise<${responseType.includes('.') ? responseType.split('.')[1] : responseType}> {
+${validationCode}
+    return this.executeRequest<${requestType.includes('.') ? requestType.split('.')[1] : requestType}, ${responseType.includes('.') ? responseType.split('.')[1] : responseType}>(
+      HttpMethod.${operation.method.toUpperCase()},
+      ${pathExpression},
+      ${requestArg},
+      ${responseType.includes('.') ? responseType.split('.')[1] : responseType},
+      options
+    );
+  }
+
+`;
   }
 
   /**
@@ -408,40 +545,86 @@ export namespace ${className} {`;
   private getNestedTypeName(typeName: string, controllerName?: string, hasNamespace: boolean = true): string {
     if (!controllerName || !hasNamespace) {
       // 如果没有namespace，返回基础类型
-      if (typeName?.toLowerCase().includes('response')) {
-        return 'any'; // 或者返回基础的响应类型
-      }
       return typeName;
     }
     
-    // 多种格式的处理：
-    // 1. "order_createorderRequest" -> "createorderRequest"
-    // 2. "orderController_createorderRequest" -> "createorderRequest"
-    // 3. "CreateorderRequest" -> "CreateorderRequest"（已简化的）
-    
+    // 移除类型名称中的控制器前缀
+    // 例如: "AnalyticshandlerGetsegmentedreportResponse" -> "GetsegmentedreportResponse"
     let simplifiedName = typeName;
     
-    // 转义controllerName以避免正则表达式问题
-    const escapedControllerName = this.escapeRegExp(controllerName.toLowerCase());
+    // 移除控制器名称前缀（不区分大小写）
+    const controllerPrefix = this.toPascalCase(controllerName);
+    if (simplifiedName.startsWith(controllerPrefix)) {
+      simplifiedName = simplifiedName.substring(controllerPrefix.length);
+    }
     
-    // 移除各种可能的前缀模式
-    simplifiedName = simplifiedName
-      .replace(new RegExp(`^${escapedControllerName}controller_`, 'i'), '') // ordercontroller_xxx
-      .replace(new RegExp(`^${escapedControllerName}_`, 'i'), '') // order_xxx  
-      .replace(/^_/, ''); // 移除开头的下划线
-    
-    // 转换为PascalCase
+    // 确保是PascalCase
     simplifiedName = this.toPascalCase(simplifiedName);
     
-    
-    return `${controllerName}Types.${simplifiedName}`;
+    // 返回namespace形式
+    return `${controllerPrefix}.${simplifiedName}`;
   }
+
 
 
   /**
    * 在命名空间内生成接口定义 - 使用class-validator装饰器
    */
   private generateNamespaceInterface(type: TypeDefinition): string {
+    // 检查是否为缺失的Request类型
+    const isMissingRequest = (type as any).isMissingRequestType;
+    const operationInfo = (type as any).operationInfo;
+    
+    if (isMissingRequest && operationInfo) {
+      // 为缺失的Request类型生成特殊的注释和基础结构
+      return `  /** 
+   * ${type.description || type.name + ' data type'}
+   * 
+   * ⚠️  注意：此请求类型定义不完整
+   * 
+   * 🔍 缺失原因：
+   * • OpenAPI规范中 ${operationInfo.method} ${operationInfo.path} 操作的requestBody定义不完整
+   * • 可能缺少具体的schema定义或属性描述
+   * 
+     * 🛠️  服务器端开发者需要完善：
+     * 1. 在Controller中完善 @ApiBody() 装饰器
+     * 2. 添加完整的DTO类定义并使用 @ApiProperty() 装饰器
+     * 3. 确保OpenAPI规范包含详细的requestBody.content.application/json.schema
+     * 4. 重新生成OpenAPI规范文档
+     * 
+     * 📝 服务器端完善示例：
+     * \`\`\`typescript
+     * @ApiBody({ type: ${type.name} })
+     * async ${operationInfo.operationId?.split('_')[1] || 'methodName'}(@Body() request: ${type.name}) {
+     *   // 实现逻辑
+     * }
+     * \`\`\`
+     * 
+     * 💡 客户端开发者：
+     * • 此类型暂时为空对象，请根据实际API文档使用
+     * • 服务器端完善后重新生成SDK即可获得完整类型定义
+   */
+  export class ${type.name} {
+    // TODO: 请根据API需求添加具体的属性定义
+    // 可以参考 ${operationInfo.operationId} 的API文档或服务端DTO定义
+
+    /** 验证请求数据 */
+    async validate(): Promise<void> {
+      const errors = await validate(this);
+      
+      if (errors.length > 0) {
+        const errorMessages = errors.map(error => 
+          Object.values(error.constraints || {}).join(', ')
+        ).join('; ');
+        throw new Error(\`Validation failed: \${errorMessages}\`);
+      }
+    }
+  }
+
+`;
+    }
+    
+    // 正常的类型定义
     const properties = Object.entries(type.properties)
       .map(([name, prop]) => {
         const decorators = this.generatePropertyDecorators(prop);
@@ -539,16 +722,16 @@ ${properties}${validateMethod}
     
     // 简化类型名，检查是否存在于controllerTypes中
     const requestType = operation.requestType ? 
-      this.getSimplifiedTypeName(operation.requestType, controllerName) : undefined;
+      this.getSimpleName(operation.requestType, controllerName) : undefined;
     const responseType = operation.responseType ?
-      this.getSimplifiedTypeName(operation.responseType, controllerName) : 
-      this.getSimplifiedTypeName(this.generateDefaultResponseTypeName(operation), controllerName);
+      this.getSimpleName(operation.responseType, controllerName) : 
+      this.getSimpleName(this.generateDefaultResponseTypeName(operation), controllerName);
       
     // 检查是否有复杂类型（需要使用简化名称检查）
     const simplifiedRequestName = operation.requestType ? 
-      this.getSimplifiedTypeName(operation.requestType, controllerName) : undefined;
+      this.getSimpleName(operation.requestType, controllerName) : undefined;
     const simplifiedResponseName = operation.responseType ?
-      this.getSimplifiedTypeName(operation.responseType, controllerName) : undefined;
+      this.getSimpleName(operation.responseType, controllerName) : undefined;
       
     const hasComplexRequestType = simplifiedRequestName && controllerTypes && 
       Array.from(controllerTypes.values()).some(type => type.name === simplifiedRequestName);
@@ -569,7 +752,7 @@ ${properties}${validateMethod}
     const pathParamsPrefix = pathParamsList ? `${pathParamsList}, ` : '';
     
     const requestParam = hasRequest ? `request: ${finalRequestType}, ` : '';
-    const requestArg = hasRequest ? 'request' : '{}';
+    const requestArg = hasRequest ? 'request' : `new ${finalRequestType}()`;
     
     // 生成路径表达式（使用模板字符串）
     let pathExpression: string;
@@ -603,8 +786,16 @@ ${validationCall}
    * 生成默认响应类型名
    */
   private generateDefaultResponseTypeName(operation: APIOperation): string {
-    const methodName = this.simplifyMethodName(operation.name);
+    const methodName = this.generateMethodNameFromPath(operation);
     return `${this.toPascalCase(methodName)}Response`;
+  }
+
+  /**
+   * 生成默认请求类型名
+   */
+  private generateDefaultRequestTypeName(operation: APIOperation): string {
+    const methodName = this.generateMethodNameFromPath(operation);
+    return `${this.toPascalCase(methodName)}Request`;
   }
 
   /**
@@ -803,25 +994,75 @@ ${validationCall}
     return versionPrefix ? `delete${versionPrefix}${baseMethodName.slice(6)}` : baseMethodName;
   }
 
+
+
+
+
   /**
-   * 获取简化的类型名称：OrderCreateorderRequest -> CreateOrderRequest
+   * 基于路径生成方法名
    */
-  private getSimplifiedTypeName(typeName: string, controllerName?: string): string {
-    if (!controllerName) return 'any'; // 没有控制器名称时返回any
+  private generateMethodNameFromPath(operation: APIOperation): string {
+    const path = operation.path;
+    const method = operation.method?.toLowerCase() || 'get';
     
-    // 转义controllerName以避免正则表达式问题
-    const escapedControllerName = this.escapeRegExp(controllerName.toLowerCase());
+    // 移除路径参数 {param}，保留路径结构
+    const cleanPath = path.replace(/\{[^}]+\}/g, '');
     
-    const originalName = typeName
-      .replace(new RegExp(`^${escapedControllerName}controller_`, 'i'), '')
-      .replace(new RegExp(`^${escapedControllerName}_`, 'i'), '')
-      .replace(/^_/, '');
+    // 移除开头的 /api/ 等前缀，并分割成单词
+    const pathSegments = cleanPath.split('/').filter(seg => 
+      seg && !['api', 'v1', 'v2'].includes(seg.toLowerCase())
+    );
     
-    return this.toPascalCase(originalName);
+    // 将每个路径段分割成单词（处理驼峰、下划线、连字符）
+    const words: string[] = [];
+    pathSegments.forEach(segment => {
+      // 处理驼峰命名：systemId -> system, Id
+      const camelWords = segment.replace(/([a-z])([A-Z])/g, '$1 $2');
+      // 处理下划线和连字符
+      const splitWords = camelWords.split(/[-_]/);
+      // 转换为小写并过滤空字符串
+      words.push(...splitWords.map(w => w.toLowerCase()).filter(w => w));
+    });
+    
+    // 生成方法名：HTTP方法 + 路径单词
+    const methodPrefix = method === 'get' ? 'get' : 
+                        method === 'post' ? 'create' :
+                        method === 'put' ? 'update' :
+                        method === 'delete' ? 'delete' :
+                        method === 'patch' ? 'patch' : method;
+    
+    // 组合成驼峰命名
+    const pathName = words.map((word, index) => 
+      index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1)
+    ).join('');
+    
+    let methodName = `${methodPrefix}${pathName.charAt(0).toUpperCase()}${pathName.slice(1)}`;
+    
+    // 处理重复方法名：如果有路径参数，添加By参数名
+    const pathParams = (operation.parameters || []).filter(p => p && p.in === 'path');
+    if (pathParams.length > 0) {
+      const paramNames = pathParams.map(p => p.name.charAt(0).toUpperCase() + p.name.slice(1)).join('');
+      methodName = `${methodPrefix}${pathName.charAt(0).toUpperCase()}${pathName.slice(1)}By${paramNames}`;
+    }
+    
+    return methodName;
   }
 
-
-
+  /**
+   * 获取简化的类型名称（用于多处调用）
+   */
+  private getSimpleName(typeName: string, controllerName?: string): string {
+    if (!controllerName) return typeName;
+    
+    const controllerPrefix = this.toPascalCase(controllerName);
+    let simplifiedName = typeName;
+    
+    if (simplifiedName.startsWith(controllerPrefix)) {
+      simplifiedName = simplifiedName.substring(controllerPrefix.length);
+    }
+    
+    return this.toPascalCase(simplifiedName);
+  }
 
   /**
    * 生成主入口文件
@@ -830,23 +1071,23 @@ ${validationCall}
     let output = `// API 客户端主入口文件\n\n`;
     
     // 导出类型定义
-    output += `export * from './types';\n\n`;
+    output += `export * from './src/types';\n\n`;
     
     // 导出所有 Controller
     for (const controllerName of controllerNames) {
       const fileName = controllerName.toLowerCase();
       const className = controllerName; // 不拼接Api后缀
-      output += `export { ${className} } from './${fileName}';\n`;
+      output += `export { ${className} } from './src/${fileName}';\n`;
     }
     
-    output += `\n// 统一客户端类（向后兼容）
-import { HttpBuilder } from 'ts-sdk-client';
+    output += `\n
+import { HttpBuilder } from 'openapi-ts-sdk';
 `;
     
     // 导入所有 Controller 类
     for (const controllerName of controllerNames) {
       const className = controllerName; // 不拼接Api后缀
-      output += `import { ${className} } from './${controllerName.toLowerCase()}';\n`;
+      output += `import { ${className} } from './src/${controllerName.toLowerCase()}';\n`;
     }
     
     output += `
@@ -884,12 +1125,6 @@ export class Client {
   private generateApiMethod(operation: APIOperation): string {
     return this.generateApiMethodWithOptions(operation);
   }
-
-
-  /**
-   * 注册 Handlebars 辅助函数
-   */
-
 }
 
 // 重新导出 API 相关类型
