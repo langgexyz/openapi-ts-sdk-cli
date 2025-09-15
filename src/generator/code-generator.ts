@@ -3,12 +3,14 @@
  */
 
 import { pascalCase, camelCase } from 'change-case';
+import { createHash } from 'crypto';
 import { APIGroup, TypeDefinition, APIOperation, TypeProperty } from './openapi-parser';
 
 export interface GeneratorOptions {
   className?: string;
   packageName?: string;
   projectName?: string;
+  sourceContent?: string; // 源文件内容，用于生成hash
 }
 
 export class CodeGenerator {
@@ -273,10 +275,15 @@ export abstract class APIClient {
     const packageName = options.packageName || 'openapi-ts-sdk';
     const className = controllerName; // 直接使用controllerName，不拼接Api后缀
     
+    // 生成源文件内容的hash
+    const sourceHash = options.sourceContent ? 
+      createHash('md5').update(options.sourceContent).digest('hex').substring(0, 8) : 
+      'unknown';
+    
     let output = `/**
  * ⚠️  此文件由 openapi-ts-sdk-cli 自动生成，请勿手动修改！
  * 
- * 📅 生成时间: ${new Date().toISOString()}
+ * 🔍 源文件hash: ${sourceHash}
  * 🔧 生成工具: openapi-ts-sdk-cli
  * 📄 源文件: OpenAPI 规范文档
  * 

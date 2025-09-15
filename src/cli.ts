@@ -178,7 +178,8 @@ program
       const files = generator.generate(apis, {
         className: name,
         packageName,
-        projectName
+        projectName,
+        sourceContent: specContent // 传递源文件内容用于生成hash
       });
 
       // 清理并重新创建输出目录
