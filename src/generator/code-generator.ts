@@ -258,7 +258,13 @@ export abstract class APIClient {
     }
     
     // 使用class-transformer进行反序列化
-    const result = plainToClass(responseType, JSON.parse(response));
+    let responseData;
+    if (typeof response === 'string') {
+      responseData = JSON.parse(response);
+    } else {
+      responseData = response;
+    }
+    const result = plainToClass(responseType, responseData);
     return result;
   }
 }
@@ -605,10 +611,15 @@ ${validationCode}
       const errors = await validate(this);
       
       if (errors.length > 0) {
-        const errorMessages = errors.map(error => 
-          Object.values(error.constraints || {}).join(', ')
-        ).join('; ');
-        throw new Error(\`Validation failed: \${errorMessages}\`);
+        const errorDetails = errors.map(error => {
+          const property = error.property || 'unknown';
+          const constraints = error.constraints || {};
+          const constraintMessages = Object.values(constraints).join(', ');
+          const value = error.value !== undefined ? JSON.stringify(error.value) : 'undefined';
+          return \`属性 '\${property}' 验证失败: \${constraintMessages} (当前值: \${value})\`;
+        }).join('\\n');
+        
+        throw new Error(\`请求数据验证失败:\\n\${errorDetails}\\n\\n💡 请检查以下内容:\\n1. 确保所有必填字段都已提供\\n2. 检查字段类型是否正确 (字符串/数字/数组等)\\n3. 验证字段格式是否符合要求\\n4. 如果问题持续，请联系服务端开发者检查API规范\`);
       }
     }
   }
@@ -635,10 +646,15 @@ ${validationCode}
       const errors = await validate(this);
       
       if (errors.length > 0) {
-        const errorMessages = errors.map(error => 
-          Object.values(error.constraints || {}).join(', ')
-        ).join('; ');
-        throw new Error(\`Validation failed: \${errorMessages}\`);
+        const errorDetails = errors.map(error => {
+          const property = error.property || 'unknown';
+          const constraints = error.constraints || {};
+          const constraintMessages = Object.values(constraints).join(', ');
+          const value = error.value !== undefined ? JSON.stringify(error.value) : 'undefined';
+          return \`属性 '\${property}' 验证失败: \${constraintMessages} (当前值: \${value})\`;
+        }).join('\\n');
+        
+        throw new Error(\`请求数据验证失败:\\n\${errorDetails}\\n\\n💡 请检查以下内容:\\n1. 确保所有必填字段都已提供\\n2. 检查字段类型是否正确 (字符串/数字/数组等)\\n3. 验证字段格式是否符合要求\\n4. 如果问题持续，请联系服务端开发者检查API规范\`);
       }
     }` : '';
 
