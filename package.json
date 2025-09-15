@@ -1,6 +1,6 @@
 {
   "name": "openapi-ts-sdk-cli",
-  "version": "1.0.1-alpha.0",
+  "version": "1.0.1",
   "description": "A powerful CLI tool to generate TypeScript SDK clients from OpenAPI specifications",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
