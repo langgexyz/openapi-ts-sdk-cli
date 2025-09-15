@@ -15,7 +15,7 @@ module.exports = {
     '^.+\\.(ts|tsx)$': 'ts-jest'
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(change-case)/)'
+    'node_modules/(?!(change-case|@openapi-contrib)/)'
   ],
   collectCoverageFrom: [
     'src/**/*.{ts,js}',
