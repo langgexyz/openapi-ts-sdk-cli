@@ -100,32 +100,32 @@ program
     }
 
     try {
-      console.log('🚀 Starting API generation...');
-      console.log(`📄 Input: ${input}`);
-      console.log(`📁 Output: ${output}`);
-      console.log(`📦 Version: ${options.version}`);
+      console.log('Starting API generation...');
+      console.log(`Input: ${input}`);
+      console.log(`Output: ${output}`);
+      console.log(`Version: ${options.version}`);
       
       // 读取 OpenAPI 文件（支持本地文件和 URL）
       let specContent: string;
       
       if (isUrl(input)) {
-        console.log('🌐 从网络地址获取 OpenAPI 规范...');
+        console.log('Fetching OpenAPI specification from URL...');
         try {
           specContent = await fetchFromUrl(input);
-          console.log('✅ 网络获取成功');
+          console.log('Successfully fetched from URL');
         } catch (fetchError) {
           const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
-          console.error(`❌ 网络获取失败: ${errorMessage}`);
+          console.error(`Failed to fetch from URL: ${errorMessage}`);
           process.exit(1);
         }
       } else {
-        console.log('📂 从本地文件读取 OpenAPI 规范...');
+        console.log('Reading OpenAPI specification from local file...');
         try {
           specContent = fs.readFileSync(input, 'utf-8');
-          console.log('✅ 本地文件读取成功');
+          console.log('Successfully read local file');
         } catch (fileError) {
           const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
-          console.error(`❌ 本地文件读取失败: ${errorMessage}`);
+          console.error(`Failed to read local file: ${errorMessage}`);
           process.exit(1);
         }
       }
@@ -135,18 +135,18 @@ program
       try {
         spec = JSON.parse(specContent);
       } catch (jsonError) {
-        console.error('❌ JSON 解析失败。当前仅支持 JSON 格式，YAML 支持即将推出。');
+        console.error('JSON parsing failed. Currently only JSON format is supported, YAML support coming soon.');
         if (process.env.DEBUG) {
-          console.error('解析错误详情:', jsonError);
+          console.error('Parse error details:', jsonError);
         }
         process.exit(1);
       }
 
       // 解析 OpenAPI
-      console.log('🔍 Parsing OpenAPI specification...');
+      console.log('Parsing OpenAPI specification...');
       const parser = new OpenAPIParser();
       const apis = parser.parse(spec);
-      console.log(`✅ Found ${apis.length} API group(s)`);
+      console.log(`Found ${apis.length} API group(s)`);
 
       // 尝试读取项目 package.json 获取项目名称
       let projectName = '';
@@ -158,7 +158,7 @@ program
         if (fs.existsSync(packageJsonPath)) {
           const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
           projectName = packageJson.name || '';
-          console.log(`📦 从项目 package.json 读取到项目名称: ${projectName}`);
+          console.log(`Read project name from package.json: ${projectName}`);
         } else {
           // 如果输入文件所在目录没有 package.json，尝试当前目录
           const currentPackageJsonPath = path.resolve(process.cwd(), 'package.json');
@@ -169,11 +169,11 @@ program
         }
       } catch (error) {
         // 忽略读取错误，使用默认值
-        console.log('⚠️  无法读取项目 package.json，将使用默认类名');
+        console.log('Unable to read project package.json, using default class name');
       }
 
       // 生成代码
-      console.log('🏗️  Generating TypeScript code...');
+      console.log('Generating TypeScript code...');
       const generator = new CodeGenerator();
       const files = generator.generate(apis, {
         className: name,
@@ -185,15 +185,15 @@ program
       // 清理并重新创建输出目录
       if (fs.existsSync(output)) {
         fs.rmSync(output, { recursive: true, force: true });
-        console.log(`🧹 Cleaned existing directory: ${output}`);
+        console.log(`Cleaned existing directory: ${output}`);
       }
       fs.mkdirSync(output, { recursive: true });
-      console.log(`📁 Created output directory: ${output}`);
+      console.log(`Created output directory: ${output}`);
       
       // 创建 src 目录
       const srcDir = path.join(output, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
-      console.log(`📁 Created src directory: ${srcDir}`);
+      console.log(`Created src directory: ${srcDir}`);
 
       // 写入生成的文件
       const writtenFiles: string[] = [];
@@ -339,31 +339,31 @@ program
         };
         
         fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-        console.log(`📦 Generated package.json`);
+        console.log(`Generated package.json`);
       }
 
-      console.log('✅ API client generated successfully!');
-      console.log(`📝 Generated files:`);
-      writtenFiles.forEach(file => console.log(`   📄 ${file}`));
-      console.log(`📊 Total controllers: ${writtenFiles.filter(f => f.endsWith('.api.ts')).length}`);
+      console.log('API client generated successfully!');
+      console.log(`Generated files:`);
+      writtenFiles.forEach(file => console.log(`   - ${file}`));
+      console.log(`Total controllers: ${writtenFiles.filter(f => f.endsWith('.api.ts')).length}`);
       console.log('');
-      console.log('🎯 Next steps:');
+      console.log('Next steps:');
       console.log(`   cd ${output}`);
       console.log('   npm install');
-      console.log('   # 使用示例:');
+      console.log('   # Usage example:');
       console.log('   # import { User } from "./index";');
       console.log('   # ');
-      console.log('   # // 1. 使用 Axios HttpBuilder');
+      console.log('   # // 1. Using Axios HttpBuilder');
       console.log('   # import { AxiosHttpBuilder } from "openapi-ts-sdk-axios";');
       console.log('   # const axiosBuilder = new AxiosHttpBuilder("http://localhost:3000");');
       console.log('   # const userApi = new User.Client(axiosBuilder);');
       console.log('   # ');
-      console.log('   # // 2. 使用 Fetch HttpBuilder');
+      console.log('   # // 2. Using Fetch HttpBuilder');
       console.log('   # import { FetchHttpBuilder } from "openapi-ts-sdk-fetch";');
       console.log('   # const fetchBuilder = new FetchHttpBuilder("http://localhost:3000");');
       console.log('   # const userApi2 = new User.Client(fetchBuilder);');
       console.log('   # ');
-      console.log('   # // 3. 使用 Gateway HttpBuilder');
+      console.log('   # // 3. Using Gateway HttpBuilder');
       console.log('   # import { GatewayHttpBuilder } from "openapi-ts-sdk-gateway";');
       console.log('   # const gatewayBuilder = new GatewayHttpBuilder("http://localhost:3000");');
       console.log('   # const userApi3 = new User.Client(gatewayBuilder);');
@@ -374,7 +374,7 @@ program
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       
-      console.error('❌ Generation failed:', errorMessage);
+      console.error('Generation failed:', errorMessage);
       if (process.env.DEBUG && errorStack) {
         console.error(errorStack);
       }
@@ -401,23 +401,23 @@ program
       let specContent: string;
       
       if (isUrl(input)) {
-        console.log('🌐 从网络地址获取 OpenAPI 规范...');
+        console.log('Fetching OpenAPI specification from URL...');
         try {
           specContent = await fetchFromUrl(input);
-          console.log('✅ 网络获取成功');
+          console.log('Successfully fetched from URL');
         } catch (fetchError) {
           const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
-          console.error(`❌ 网络获取失败: ${errorMessage}`);
+          console.error(`Failed to fetch from URL: ${errorMessage}`);
           process.exit(1);
         }
       } else {
-        console.log('📂 从本地文件读取 OpenAPI 规范...');
+        console.log('Reading OpenAPI specification from local file...');
         try {
           specContent = fs.readFileSync(input, 'utf-8');
-          console.log('✅ 本地文件读取成功');
+          console.log('Successfully read local file');
         } catch (fileError) {
           const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
-          console.error(`❌ 本地文件读取失败: ${errorMessage}`);
+          console.error(`Failed to read local file: ${errorMessage}`);
           process.exit(1);
         }
       }

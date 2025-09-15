@@ -120,9 +120,9 @@ export class OpenAPIParser {
             const typeName = `${this.extractTypeNameFromOperationId(op.operationId)}Request`;
             const requestType = this.parseRequestType(op);
             allTypes.set(requestType.name, requestType);
-            console.log(`✅ 成功生成 Request 类型: ${requestType.name} for ${op.operationId}`);
+            console.log(`Successfully generated Request type: ${requestType.name} for ${op.operationId}`);
           } catch (error) {
-            console.warn(`⚠️  解析 Request 类型失败: ${op.operationId} - ${error instanceof Error ? error.message : error}`);
+            console.warn(`Failed to parse Request type: ${op.operationId} - ${error instanceof Error ? error.message : error}`);
             // 继续处理其他类型，不中断整个流程
           }
         }
@@ -181,9 +181,9 @@ export class OpenAPIParser {
           const suggestedId = `${controllerName}Controller_${methodName}`;
           const routePath = path.replace(`/api/${controllerName}`, '') || '/';
           errors.push(
-            `❌ ${method.toUpperCase()} ${path}: operationId 缺失\n` +
-            `   💡 建议在Controller中添加：@ApiOperation({ operationId: '${suggestedId}' })\n` +
-            `   📝 或者：@${method.charAt(0).toUpperCase() + method.slice(1).toLowerCase()}('${routePath}', { operationId: '${suggestedId}' })`
+            `${method.toUpperCase()} ${path}: Missing operationId\n` +
+            `   Suggestion: Add to Controller: @ApiOperation({ operationId: '${suggestedId}' })\n` +
+            `   Or: @${method.charAt(0).toUpperCase() + method.slice(1).toLowerCase()}('${routePath}', { operationId: '${suggestedId}' })`
           );
           continue;
         }
@@ -199,10 +199,10 @@ export class OpenAPIParser {
 
           
           errors.push(
-            `❌ ${method.toUpperCase()} ${path}: operationId "${operation.operationId}" 格式不正确\n` +
-            `   💡 期望格式: "controllerName_methodName" 或 "controllerNameController_methodName"\n` +
-            `   📝 建议修改为: "${suggestedId}"\n` +
-            `   🔧 在Controller中修改：@ApiOperation({ operationId: '${suggestedId}' })`
+            `${method.toUpperCase()} ${path}: operationId "${operation.operationId}" format incorrect\n` +
+            `   Expected format: "controllerName_methodName" or "controllerNameController_methodName"\n` +
+            `   Suggested fix: "${suggestedId}"\n` +
+            `   Modify in Controller: @ApiOperation({ operationId: '${suggestedId}' })`
           );
           continue;
         }
@@ -238,18 +238,18 @@ export class OpenAPIParser {
     
     // 如果有错误，输出所有错误信息并继续生成
     if (errors.length > 0) {
-      console.warn('\n⚠️  发现以下 operationId 格式问题:');
+      console.warn('\nFound the following operationId format issues:');
       console.warn('='.repeat(60));
       errors.forEach((error, index) => {
         console.warn(`\n${index + 1}. ${error}`);
       });
-      console.warn('\n📖 operationId 命名规范说明:');
+      console.warn('\noperationId naming convention:');
       console.warn('   格式: {controllerName}Controller_{methodName} 或 {controllerName}_{methodName}');
       console.warn('   示例: userController_getUsers, orderController_createOrder');
       console.warn('   注意: 使用驼峰命名，controllerName应与文件名对应');
       console.warn('='.repeat(60));
-      console.warn(`⚠️  发现 ${errors.length} 个格式问题，将继续生成代码但可能影响代码质量和可读性`);
-      console.warn('💡 建议按照上述规范修复后重新生成以获得最佳代码质量\n');
+      console.warn(`Found ${errors.length} format issues, continuing generation but may affect code quality and readability`);
+      console.warn('Suggestion: Fix according to the above specifications and regenerate for best code quality\n');
     }
     
     return groups;
@@ -516,7 +516,7 @@ export class OpenAPIParser {
         
         // 如果无法推导出具体类型，发出警告并跳过该字段
         if (!mappedType || mappedType === 'unknown') {
-          console.warn(`⚠️  字段类型推导失败: ${name}.${propName} - 缺少明确的类型定义，建议在OpenAPI规范中为该字段添加具体的type属性`);
+          console.warn(`Field type inference failed: ${name}.${propName} - Missing explicit type definition, suggest adding specific type property in OpenAPI specification`);
           continue; // 跳过该字段，不添加到类型定义中
         }
         
