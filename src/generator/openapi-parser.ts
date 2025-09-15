@@ -67,10 +67,13 @@ interface PathAnalysis {
 }
 
 export class OpenAPIParser {
+  private spec!: OpenAPISpec;
+
   constructor() {
   }
 
   parse(spec: OpenAPISpec): APIGroup[] {
+    this.spec = spec;
     const apis: APIGroup[] = [];
     const allTypes: Map<string, TypeDefinition> = new Map();
 
@@ -83,6 +86,74 @@ export class OpenAPIParser {
         }
       }
     }
+    
+    // 确保所有被引用的schema都被解析（包括间接引用）
+    const referencedSchemas = new Set<string>();
+    const collectReferencedSchemas = (type: TypeDefinition) => {
+      for (const [_, prop] of Object.entries(type.properties)) {
+        if (prop.type.includes('[]')) {
+          const baseType = prop.type.replace('[]', '');
+          if (baseType !== 'string' && baseType !== 'number' && baseType !== 'boolean' && !baseType.startsWith('Record<')) {
+            referencedSchemas.add(baseType);
+          }
+        } else if (prop.type !== 'string' && prop.type !== 'number' && prop.type !== 'boolean' && !prop.type.startsWith('Record<')) {
+          referencedSchemas.add(prop.type);
+        }
+      }
+    };
+    
+    // 直接从schema中收集引用
+    const collectSchemaReferences = (schema: any) => {
+      if (schema && typeof schema === 'object') {
+        if (schema.$ref) {
+          const refName = this.extractRefName(schema.$ref);
+          referencedSchemas.add(refName);
+        }
+        if (schema.items) {
+          collectSchemaReferences(schema.items);
+        }
+        if (schema.properties) {
+          for (const [_, propSchema] of Object.entries(schema.properties)) {
+            collectSchemaReferences(propSchema);
+          }
+        }
+      }
+    };
+    
+    // 收集所有已解析类型的引用
+    for (const [_, type] of allTypes) {
+      collectReferencedSchemas(type);
+    }
+    
+    // 直接从原始schema中收集引用
+    if (spec.components?.schemas) {
+      for (const [_, schema] of Object.entries(spec.components.schemas)) {
+        collectSchemaReferences(schema);
+      }
+    }
+    
+    // 解析被引用但未解析的schema
+    if (spec.components?.schemas) {
+      console.log('Referenced schemas:', Array.from(referencedSchemas));
+      console.log('Existing types:', Array.from(allTypes.keys()));
+      for (const [name, schema] of Object.entries(spec.components.schemas)) {
+        if (referencedSchemas.has(name) && !allTypes.has(name) && this.isSchemaObject(schema)) {
+          console.log(`Parsing referenced schema: ${name}`);
+          const parsedType = this.parseSchema(name, schema);
+          allTypes.set(parsedType.name, parsedType);
+        }
+      }
+    }
+    
+    // 确保所有被解析的类型都被包含在API组中
+    const globalTypesGroup: APIGroup = {
+      className: 'GlobalTypes',
+      operations: [],
+      types: Array.from(allTypes.values())
+    };
+    
+    // 将全局类型组添加到API组列表中
+    apis.push(globalTypesGroup);
 
     // 按 tag 分组 API
     const tagGroups = this.groupByTags(spec.paths);
@@ -469,6 +540,12 @@ export class OpenAPIParser {
    * @returns 返回具体类型，如果无法推导则返回null
    */
   private mapOpenAPITypeToTS(openApiType?: string, schema?: any): string | null {
+    // 处理 $ref 引用
+    if (schema?.$ref) {
+      const refName = this.extractRefName(schema.$ref);
+      return this.toPascalCase(refName);
+    }
+    
     switch (openApiType) {
       case 'string':
         return 'string';
@@ -484,6 +561,11 @@ export class OpenAPIParser {
           if (itemType) {
             return `${itemType}[]`;
           }
+        }
+        // 检查数组元素是否为 $ref
+        if (schema?.items?.$ref) {
+          const refName = this.extractRefName(schema.items.$ref);
+          return `${this.toPascalCase(refName)}[]`;
         }
         // 如果无法推导数组元素类型，返回null
         return null;
@@ -503,6 +585,7 @@ export class OpenAPIParser {
   }
 
   private parseSchema(name: string, schema: SchemaObject): TypeDefinition {
+    console.log(`Parsing schema ${name}:`, JSON.stringify(schema, null, 2));
 
     const properties: Record<string, TypeProperty> = {};
     
@@ -513,6 +596,9 @@ export class OpenAPIParser {
         
         // 尝试推导类型
         const mappedType = this.mapOpenAPITypeToTS(prop.type, prop);
+        
+        // 调试信息
+        console.log(`Parsing field ${name}.${propName}: type=${prop.type}, mappedType=${mappedType}, schema=`, JSON.stringify(propSchema, null, 2));
         
         // 如果无法推导出具体类型，发出警告并跳过该字段
         if (!mappedType || mappedType === 'unknown') {
@@ -577,7 +663,14 @@ export class OpenAPIParser {
     // 处理 $ref 引用
     if ('$ref' in schema) {
       const refName = this.extractRefName(schema.$ref);
-      return { name: this.toPascalCase(refName), description: undefined, properties: {} };
+      // 从全局schemas中查找对应的schema定义
+      const referencedSchema = this.spec.components?.schemas?.[refName];
+      if (referencedSchema && this.isSchemaObject(referencedSchema)) {
+        return this.parseSchema(this.toPascalCase(refName), referencedSchema);
+      } else {
+        console.warn(`Referenced schema ${refName} not found in components.schemas`);
+        return { name: this.toPascalCase(refName), description: undefined, properties: {} };
+      }
     }
     
     const parsedType = this.parseSchema(typeName, this.isSchemaObject(schema) ? schema : { type: "object" });

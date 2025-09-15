@@ -41,7 +41,7 @@ export class CodeGenerator {
     const controllerGroups = this.groupByController(apis);
     
     for (const [controllerName, controllerApis] of controllerGroups) {
-      const apiContent = this.generateControllerApi(controllerName, controllerApis, options);
+      const apiContent = this.generateControllerApi(controllerName, controllerApis, apis, options);
       files.set(`${controllerName.toLowerCase()}.ts`, apiContent); // 去掉.api后缀
     }
     
@@ -69,36 +69,58 @@ export class CodeGenerator {
     const groups = new Map<string, APIGroup[]>();
 
     for (const api of apis) {
-      // 遍历 API 组中的所有操作，提取 Controller 名称
-      for (const operation of api.operations) {
-        const controllerName = this.extractControllerName(operation.name);
+      // 处理有操作的API组
+      if (api.operations.length > 0) {
+        // 遍历 API 组中的所有操作，提取 Controller 名称
+        for (const operation of api.operations) {
+          const controllerName = this.extractControllerName(operation.name);
+          if (!groups.has(controllerName)) {
+            groups.set(controllerName, []);
+          }
+          
+          // 为每个 Controller 创建独立的 API 对象
+          const controllerGroup = groups.get(controllerName);
+          if (controllerGroup) {
+            let controllerApi = controllerGroup.find(a => a.className === controllerName);
+            if (!controllerApi) {
+              controllerApi = {
+                className: controllerName,
+                operations: [],
+                types: []  // 将在后面收集相关类型
+              };
+              controllerGroup.push(controllerApi);
+            }
+            
+            controllerApi.operations.push(operation);
+          }
+        }
+      } else {
+        // 处理没有操作的API组（如GlobalTypes），也要生成文件
+        const controllerName = api.className;
         if (!groups.has(controllerName)) {
           groups.set(controllerName, []);
         }
         
-        // 为每个 Controller 创建独立的 API 对象
         const controllerGroup = groups.get(controllerName);
         if (controllerGroup) {
           let controllerApi = controllerGroup.find(a => a.className === controllerName);
           if (!controllerApi) {
             controllerApi = {
               className: controllerName,
-              operations: [],
-              types: []  // 将在后面收集相关类型
+              operations: [], // 没有操作
+              types: [] // 将在后面收集相关类型
             };
             controllerGroup.push(controllerApi);
           }
-          
-          controllerApi.operations.push(operation);
         }
       }
     }
     
-    // 重新分配类型定义给相应的 Controller
+    // 重新分配所有API组的类型定义给相应的 Controller
     for (const api of apis) {
       for (const type of api.types) {
         // 根据类型名称找到对应的 Controller
-        let assignedController = 'Common';
+        let assignedController: string | null = null;
         for (const [controllerName] of groups) {
           if (type.name.toLowerCase().includes(controllerName.toLowerCase())) {
             assignedController = controllerName;
@@ -106,10 +128,15 @@ export class CodeGenerator {
           }
         }
         
-        const controllerApis = groups.get(assignedController);
-        if (controllerApis && controllerApis[0]) {
-          controllerApis[0].types.push(type);
+        // 只分配类型给已存在的Controller，避免创建不必要的Common Controller
+        if (assignedController) {
+          const controllerApis = groups.get(assignedController);
+          if (controllerApis && controllerApis[0]) {
+            controllerApis[0].types.push(type);
+          }
         }
+        // 如果找不到匹配的Controller，跳过这个类型
+        // 它可能已经被其他Controller通过引用包含了
       }
     }
     
@@ -131,12 +158,12 @@ export class CodeGenerator {
   private extractControllerName(operationName: string): string {
     // 验证操作名称格式并提取 Controller 名称
     if (!operationName) {
-      throw new Error(`❌ operationName 为空，无法提取Controller名称`);
+      throw new Error(`operationName is empty, unable to extract Controller name`);
     }
     
     const match = operationName.match(/^([a-zA-Z]+?)(?:controller)?[_]([a-zA-Z]+)/i);
     if (!match) {
-      throw new Error(`❌ operationName "${operationName}" 格式不正确。期望格式: "controllerName_methodName" 或 "controllerNameController_methodName"`);
+      throw new Error(`operationName "${operationName}" format is incorrect. Expected format: "controllerName_methodName" or "controllerNameController_methodName"`);
     }
     
     // 转换为驼峰命名，去掉Controller后缀
@@ -271,7 +298,7 @@ export abstract class APIClient {
   /**
    * 生成单个 Controller 的 API 类
    */
-  private generateControllerApi(controllerName: string, apis: APIGroup[], options: GeneratorOptions): string {
+  private generateControllerApi(controllerName: string, apis: APIGroup[], allApis: APIGroup[], options: GeneratorOptions): string {
     const packageName = options.packageName || 'openapi-ts-sdk';
     const className = controllerName; // 直接使用controllerName，不拼接Api后缀
     
@@ -329,12 +356,59 @@ export namespace ${className} {`;
         }
       }
     }
+    
+    // 收集所有被引用的类型（包括间接引用）
+    const referencedTypes = new Set<string>();
+    const collectReferencedTypes = (type: TypeDefinition) => {
+      for (const [_, prop] of Object.entries(type.properties)) {
+        // 检查属性类型是否引用了其他类型
+        if (prop.type.includes('[]')) {
+          const baseType = prop.type.replace('[]', '');
+          if (baseType !== 'string' && baseType !== 'number' && baseType !== 'boolean' && !baseType.startsWith('Record<')) {
+            referencedTypes.add(baseType);
+          }
+        } else if (prop.type !== 'string' && prop.type !== 'number' && prop.type !== 'boolean' && !prop.type.startsWith('Record<')) {
+          referencedTypes.add(prop.type);
+        }
+      }
+    };
+    
+    // 收集所有已定义类型的引用
+    for (const [_, type] of controllerTypes) {
+      collectReferencedTypes(type);
+    }
+    
+    // 添加被引用的类型定义 - 从所有API组中查找
+    for (const apiGroup of apis) {
+      for (const type of apiGroup.types) {
+        if (referencedTypes.has(type.name)) {
+          controllerTypes.set(type.name, type);
+        }
+      }
+    }
+    
+    // 如果还有未找到的引用类型，尝试从全局类型中查找
+    const allGlobalTypes = new Map<string, TypeDefinition>();
+    for (const apiGroup of allApis) {
+      for (const type of apiGroup.types) {
+        allGlobalTypes.set(type.name, type);
+      }
+    }
+    
+    // 只添加被当前控制器引用的全局类型，而不是所有全局类型
+    for (const referencedType of referencedTypes) {
+      if (!controllerTypes.has(referencedType) && allGlobalTypes.has(referencedType)) {
+        controllerTypes.set(referencedType, allGlobalTypes.get(referencedType)!);
+      }
+    }
 
     // 收集简化的类型定义，准备作为嵌套类
     const nestedTypes: any[] = [];
     const collectedTypeNames = new Set<string>();
     
-    // 收集明确定义的类型
+    // 收集明确定义的类型并创建类型名映射
+    const typeNameMapping = new Map<string, string>();
+    
     if (controllerTypes.size > 0) {
       for (const [_, type] of controllerTypes) {
         // 简化类型名称：移除控制器前缀
@@ -349,12 +423,31 @@ export namespace ${className} {`;
         // 确保是PascalCase
         simplifiedName = this.toPascalCase(simplifiedName);
         
+        // 记录类型名映射
+        typeNameMapping.set(type.name, simplifiedName);
+        
         const simplifiedType = {
           ...type,
           name: simplifiedName
         };
         nestedTypes.push(simplifiedType);
         collectedTypeNames.add(simplifiedName);
+      }
+    }
+    
+    // 更新所有类型中的类型引用
+    for (const type of nestedTypes) {
+      for (const [propName, prop] of Object.entries(type.properties)) {
+        // 更新属性类型引用
+        const typedProp = prop as any;
+        if (typedProp.type && typedProp.type.includes('[]')) {
+          const baseType = typedProp.type.replace('[]', '');
+          if (typeNameMapping.has(baseType)) {
+            typedProp.type = typeNameMapping.get(baseType)! + '[]';
+          }
+        } else if (typedProp.type && typeNameMapping.has(typedProp.type)) {
+          typedProp.type = typeNameMapping.get(typedProp.type)!;
+        }
       }
     }
     
@@ -580,29 +673,29 @@ ${validationCode}
       return `  /** 
    * ${type.description || type.name + ' data type'}
    * 
-   * ⚠️  注意：此请求类型定义不完整
+   * Note: This request type definition is incomplete
    * 
-   * 🔍 缺失原因：
-   * • OpenAPI规范中 ${operationInfo.method} ${operationInfo.path} 操作的requestBody定义不完整
-   * • 可能缺少具体的schema定义或属性描述
+   * Missing reason:
+   * • The requestBody definition for ${operationInfo.method} ${operationInfo.path} operation in OpenAPI specification is incomplete
+   * • May lack specific schema definition or property description
    * 
-     * 🛠️  服务器端开发者需要完善：
-     * 1. 在Controller中完善 @ApiBody() 装饰器
-     * 2. 添加完整的DTO类定义并使用 @ApiProperty() 装饰器
-     * 3. 确保OpenAPI规范包含详细的requestBody.content.application/json.schema
-     * 4. 重新生成OpenAPI规范文档
+     * For server-side developers to improve:
+     * 1. Complete @ApiBody() decorator in Controller
+     * 2. Add complete DTO class definition and use @ApiProperty() decorator
+     * 3. Ensure OpenAPI specification includes detailed requestBody.content.application/json.schema
+     * 4. Regenerate OpenAPI specification documentation
      * 
-     * 📝 服务器端完善示例：
+     * Server-side improvement example:
      * \`\`\`typescript
      * @ApiBody({ type: ${type.name} })
      * async ${operationInfo.operationId?.split('_')[1] || 'methodName'}(@Body() request: ${type.name}) {
-     *   // 实现逻辑
+     *   // Implementation logic
      * }
      * \`\`\`
      * 
-     * 💡 客户端开发者：
-     * • 此类型暂时为空对象，请根据实际API文档使用
-     * • 服务器端完善后重新生成SDK即可获得完整类型定义
+     * For client developers:
+     * • This type is temporarily an empty object, please use according to actual API documentation
+     * • After server-side improvement, regenerate SDK to get complete type definition
    */
   export class ${type.name} {
     // 注意: 需要根据具体API需求添加属性定义
@@ -621,7 +714,7 @@ ${validationCode}
           return \`属性 '\${property}' 验证失败: \${constraintMessages} (当前值: \${value})\`;
         }).join('\\n');
         
-        throw new Error(\`请求数据验证失败:\\n\${errorDetails}\\n\\n💡 请检查以下内容:\\n1. 确保所有必填字段都已提供\\n2. 检查字段类型是否正确 (字符串/数字/数组等)\\n3. 验证字段格式是否符合要求\\n4. 如果问题持续，请联系服务端开发者检查API规范\`);
+        throw new Error(\`Request data validation failed:\\n\${errorDetails}\\n\\nPlease check the following:\\n1. Ensure all required fields are provided\\n2. Check if field types are correct (string/number/array etc.)\\n3. Verify field formats meet requirements\\n4. If the problem persists, please contact server-side developers to check API specification\`);
       }
     }
   }
@@ -656,7 +749,7 @@ ${validationCode}
           return \`属性 '\${property}' 验证失败: \${constraintMessages} (当前值: \${value})\`;
         }).join('\\n');
         
-        throw new Error(\`请求数据验证失败:\\n\${errorDetails}\\n\\n💡 请检查以下内容:\\n1. 确保所有必填字段都已提供\\n2. 检查字段类型是否正确 (字符串/数字/数组等)\\n3. 验证字段格式是否符合要求\\n4. 如果问题持续，请联系服务端开发者检查API规范\`);
+        throw new Error(\`Request data validation failed:\\n\${errorDetails}\\n\\nPlease check the following:\\n1. Ensure all required fields are provided\\n2. Check if field types are correct (string/number/array etc.)\\n3. Verify field formats meet requirements\\n4. If the problem persists, please contact server-side developers to check API specification\`);
       }
     }` : '';
 
@@ -671,7 +764,7 @@ ${properties}${validateMethod}
   /**
    * 基于OpenAPI属性生成class-validator装饰器
    */
-  private generatePropertyDecorators(prop: TypeProperty): string {
+  private generatePropertyDecorators(prop: TypeProperty, typeNameMapping?: Map<string, string>): string {
     const decorators: string[] = [];
 
     // 检查是否为数组类型
@@ -682,7 +775,8 @@ ${properties}${validateMethod}
       // 只有复杂对象数组才需要 ClassArray，基础类型数组不需要
       if (this.isComplexType(itemType)) {
         // 复杂类型数组（如 User[]、Msg[]）使用 @Type 装饰器
-        decorators.push(`    @Type(() => ${itemType})`);
+        const mappedType = typeNameMapping?.get(itemType) || itemType;
+        decorators.push(`    @Type(() => ${mappedType})`);
       }
       // 基础类型数组（string[]、number[]、boolean[]）和内置类型不需要特殊装饰器
 
