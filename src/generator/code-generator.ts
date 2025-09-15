@@ -156,7 +156,7 @@ export class CodeGenerator {
     return `// 共享类型定义和基础 API 客户端
 
 import { HttpBuilder, HttpMethod } from 'openapi-ts-sdk';
-import { plainToClass, classToPlain, Type, Expose, Exclude } from 'class-transformer';
+import { plainToClass, instanceToPlain, Type, Expose, Exclude } from 'class-transformer';
 
 // API 配置接口
 export interface APIConfig {
@@ -242,7 +242,7 @@ export abstract class APIClient {
     
     // 序列化请求体（如果有）
     if (request) {
-      const requestJson = JSON.stringify(classToPlain(request));
+      const requestJson = JSON.stringify(instanceToPlain(request));
       httpBuilder.setContent(requestJson);
     }
     
@@ -258,12 +258,7 @@ export abstract class APIClient {
     }
     
     // 使用class-transformer进行反序列化
-    let responseData;
-    if (typeof response === 'string') {
-      responseData = JSON.parse(response);
-    } else {
-      responseData = response;
-    }
+    const responseData = JSON.parse(response);
     const result = plainToClass(responseType, responseData);
     return result;
   }
@@ -295,7 +290,7 @@ export abstract class APIClient {
 import 'reflect-metadata';
 import { HttpMethod } from 'openapi-ts-sdk';
 import { APIClient, APIOption, APIConfig } from './types';
-import { plainToClass, classToPlain, Type, Expose, Exclude } from 'class-transformer';
+import { plainToClass, instanceToPlain, Type, Expose, Exclude } from 'class-transformer';
 import { IsString, IsNumber, IsBoolean, IsOptional, IsEmail, Min, Max, MinLength, MaxLength, Matches, validate } from 'class-validator';
 
 export namespace ${className} {`;
