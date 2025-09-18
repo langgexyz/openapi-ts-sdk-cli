@@ -237,7 +237,7 @@ export abstract class APIClient {
   }
 
   /**
-   * 通用请求处理方法 - 参考PostJsonNoToken设计，但保持异常抛出模式
+   * 通用请求处理方法 - 处理 HTTP 请求和响应的序列化/反序列化
    * @protected
    */
   protected async executeRequest<TRequest = unknown, TResponse = unknown>(
