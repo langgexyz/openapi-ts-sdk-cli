@@ -238,30 +238,10 @@ export abstract class APIClient {
 
   /**
    * 通用请求处理方法 - 处理 HTTP 请求和响应的序列化/反序列化
-   * 
    * @protected
-   * @template TRequest - 请求类型，必须是明确定义的对象类型（class 或 interface）
-   *                     ❌ 禁止使用：any、unknown、string、number、boolean 等基础类型
-   *                     ✅ 推荐使用：具体的 Request 类（如 LoginRequest、UserCreateRequest）
-   * @template TResponse - 响应类型，必须是明确定义的对象类型（class 或 interface）
-   *                      ❌ 禁止使用：any、unknown、string、number、boolean 等基础类型
-   *                      ✅ 推荐使用：具体的 Response 类（如 LoginResponse、UserResponse）
-   * 
-   * @example
-   * // ✅ 正确用法：
-   * await this.executeRequest<LoginRequest, LoginResponse>(
-   *   HttpMethod.POST, "/login", request, LoginResponse, options
-   * );
-   * 
-   * // ❌ 错误用法（会产生编译错误）：
-   * await this.executeRequest<any, any>(...)           // any 被禁止
-   * await this.executeRequest<string, object>(...)     // 基础类型被禁止
-   * await this.executeRequest<unknown, unknown>(...)   // unknown 被禁止
    */
-  protected async executeRequest<
-    TRequest extends Record<string, any> = Record<string, never>,
-    TResponse extends Record<string, any> = Record<string, never>
-  >(    method: HttpMethod,
+  protected async executeRequest<TRequest = unknown, TResponse = unknown>(
+    method: HttpMethod,
     path: string,
     request: TRequest,
     responseType: {new(...args:any[]): TResponse},
