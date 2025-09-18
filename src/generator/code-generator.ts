@@ -26,16 +26,16 @@ export class CodeGenerator {
    * @returns Map<文件名, 文件内容> - 生成的多个 TypeScript 文件
    *
    * 生成策略:
-   * 1. 生成 types.ts - 包含共享的基础类型和接口
+   * 1. 生成 client.ts - 包含共享的基础类型和客户端基类
    * 2. 按 Controller 分组生成独立的 API 文件
    * 3. 每个 Controller 文件包含对应的类型定义和 API 方法
    */
   generate(apis: APIGroup[], options: GeneratorOptions): Map<string, string> {
     const files = new Map<string, string>();
 
-    // 生成共享的基础类型和基类 (types.ts)
-    const typesContent = this.generateSharedApiTypes();
-    files.set('types.ts', typesContent);
+    // 生成共享的基础类型和基类 (client.ts)
+    const clientContent = this.generateSharedApiTypes();
+    files.set('client.ts', clientContent);
 
     // 按 Controller 名称分组，为每个 Controller 生成独立的 API 文件
     const controllerGroups = this.groupByController(apis);
@@ -323,7 +323,7 @@ export abstract class APIClient {
 
 import 'reflect-metadata';
 import { HttpMethod } from 'openapi-ts-sdk';
-import { APIClient, APIOption, APIConfig } from './types';
+import { APIClient, APIOption, APIConfig } from './client';
 import { plainToClass, instanceToPlain, Type, Expose, Exclude } from 'class-transformer';
 import { IsString, IsNumber, IsBoolean, IsOptional, IsEmail, Min, Max, MinLength, MaxLength, Matches, validate } from 'class-validator';
 
@@ -1230,7 +1230,7 @@ ${validationCall}
     let output = `// API 客户端主入口文件\n\n`;
     
     // 导出类型定义
-    output += `export * from './src/types';\n\n`;
+    output += `export * from './src/client';\n\n`;
     
     // 导出所有 Controller
     for (const controllerName of controllerNames) {
